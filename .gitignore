@@ -1,0 +1,24 @@
+# Local environment files; keep a documented example when needed.
+.env
+.env.*
+!.env.example
+
+# Operating System files; never commit.
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Editor temporary files; never commit.
+*.swp
+*~
+
+# BEGIN module:claude slot:gitignore
+# Personal Claude Code settings; shared project configuration may still be
+# committed under .claude/ when the project uses it.
+/.claude/settings.local.json
+# END module:claude slot:gitignore
+
+# @module-slot: gitignore

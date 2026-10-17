@@ -1,0 +1,8 @@
+{
+  "modules": [
+    "claude"
+  ],
+  "schema": 1,
+  "template_commit": "321a3738c5f3bb00a4d58d0c7019c6c723f62e98",
+  "template_dirty": false
+}
