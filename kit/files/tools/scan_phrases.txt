@@ -1,0 +1,21 @@
+# Phrase list for the source scan (docs/kb/source-pipeline.md).
+#
+# One line per pattern: a label, one space, then a case-insensitive regular expression.
+# Text is matched after Unicode NFKC normalisation. A label is lowercase letters, digits, and
+# hyphens; it names a finding and is the only part of a match that is ever reported, unless
+# the converter is run with --snippets. Blank lines and lines starting with # are ignored.
+#
+# The list is versioned with the scanner: any change to it raises SCANNER_VERSION in kbscan.py.
+# At most 200 patterns of at most 500 characters. Keep quantifiers bounded.
+
+ignore-prior-instructions \b(ignore|disregard|forget|override)\b[^.\n]{0,40}\b(previous|prior|above|earlier|all|any)\b[^.\n]{0,30}\b(instructions?|prompts?|rules?|context|directions?)\b
+claims-the-reader-is-an-ai \b(you are|you're|act as|pretend to be|behave as)\b[^.\n]{0,30}\b(an? )?(ai|llm|language model|chatbot|claude|chatgpt|gpt)\b
+system-prompt \bsystem prompt\b
+role-tags <\s*/?\s*(system|assistant|human)\s*>|\[/?INST\]|<\|(im_start|im_end|system)\|>
+requests-a-command \b(run|execute|paste|type)\b[^.\n]{0,30}\b(following|this|these|the) (shell |terminal |bash )?(command|script|code)s?\b
+pipes-to-a-shell \b(curl|wget)\b[^\n]{0,120}\|\s*(ba|z)?sh\b
+destructive-command \brm\s+-rf\b
+requests-a-fetch \b(fetch|download|visit|browse to|send a request to)\b[^.\n]{0,30}\b(url|https?://)
+requests-concealment \b(do not|don't|never|without)\b[^.\n]{0,20}\b(tell|inform|notify|alert|mention|reveal|show)\b[^.\n]{0,20}\b(the )?(user|human|owner|operator)\b|\b(hide|conceal|keep)\b[^.\n]{0,30}\bfrom the (user|human|owner)\b
+requests-secrets \b(send|upload|post|exfiltrate|email|mail)\b[^.\n]{0,60}\b(api key|password|credentials?|secret|token|ssh)\b
+mentions-agent-configuration \b(claude code|claude\.md|agents\.md)\b

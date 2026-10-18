@@ -7,8 +7,8 @@ independently tracked knowledge-base store: a fresh git repository holding the t
 specifications, and an empty skeleton, to which the owner adds domains of their own. It carries
 no subject matter. A store needs nothing from this repository once it exists.
 
-Not built yet: upgrading a store, the source-pipeline tools, and the domain-lifecycle tools. The
-roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
+Not built yet: upgrading a store and the domain-lifecycle tools (`add_source.py`, `new_domain.py`,
+`new_entry.py`, `kb_status.py`). The roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
 
 ## Components and responsibilities
 
@@ -17,8 +17,10 @@ roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
   `kit.json` (kit version and the closing hint), and `migrations.json` (schema migration steps,
   empty at schema 1).
 - `kit/files/tools/` holds the store's own tools: `kbparse.py` (the strict front-matter and claim-tag
-  parser) and `check_kb.py` (the validator). `kit/files/docs/kb/` holds copies of the four
-  specifications, guarded by a drift test.
+  parser), `check_kb.py` (the validator), and the source pipeline: `convert_sources.py` (the command),
+  `convert_worker.py` (opens one PDF), `kbscan.py` (the scan rules that need no PDF library), and
+  `scan_phrases.txt` (the phrase list). `kit/files/docs/kb/` holds copies of the four specifications,
+  guarded by a drift test.
 - `kit/files/template-module/` is the descriptor that lets `claude_project_template` register a store
   and insert guidance into other projects.
 - `tests/` is a `unittest` suite that creates stores in scratch directories.
@@ -38,6 +40,18 @@ roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
    excluded. `.kb-manifest` is written last, listing a checksum for each starter-owned file.
 5. The installer prints the kit hint and one registration line for the template. It runs nothing else.
 
+### The source pipeline
+
+A store's `convert_sources.py` uses only the standard library. For each saved PDF it starts
+`convert_worker.py` as a child under the interpreter that has `pymupdf` and `pymupdf4llm`, in isolated
+mode, with a scrubbed environment, a time limit, and an output limit; the child is killed when it
+overruns either. The worker scans the file (structure, links, hidden text, annotations, metadata) with
+the rules in `kbscan.py` and converts it to Markdown; `pdftotext` makes the plain-text copy. The
+command writes both under `text/` with front matter and an untrusted-content banner, moves a flagged
+original to `sources/quarantine/` and leaves a stub, and updates the catalog fields it owns (`state`,
+`scan`, `released`). The source is never modified and nothing is deleted. The worker makes no network
+connection. Requirements: `docs/specs/source-pipeline.md`.
+
 ## External interfaces
 
 - Command line: `install.py <target>` with `--name`, `--git-name`, `--git-email`,
@@ -47,12 +61,16 @@ roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
   neither reads the other's code.
 - The registration line, which tells the owner how to register the store with the template, with a
   suggested `--name` when the directory name is not a valid template module name.
-- Inside a store, `python3 tools/check_kb.py` validates the layout, front matter, catalog, and claims.
+- Inside a store, `python3 tools/check_kb.py` validates the layout, front matter, catalog, and claims,
+  and `<interpreter> tools/convert_sources.py` scans and converts sources (`--scan`, `--check`,
+  `--images`, `--snippets`, `--release <stem>`, and limit flags).
 
 ## Constraints and tradeoffs
 
-- Standard library and git only, so a store can be created anywhere Python 3.9 and git exist. The
-  installer relies on POSIX file semantics (`O_NOFOLLOW`, FIFOs), so macOS and Linux only.
+- Standard library and git only for the installer, so a store can be created anywhere Python 3.9 and git
+  exist. The installer relies on POSIX file semantics (`O_NOFOLLOW`, FIFOs), so macOS and Linux only.
+  The converter's PDF library (`pymupdf`, `pymupdf4llm`) and `pdftotext` are not installed by anything
+  here; the converter reports what is missing.
 - The installer treats the command line as intent and everything else as untrusted: it reads kit files as
   regular files with a size cap, refuses symlinks and `.git` path components, and runs git only in the
   starter checkout and in the new directory with a scrubbed environment.

@@ -3,10 +3,18 @@
 ## Setup
 
 Python 3.9 or newer and git, standard library only; macOS and Linux (the installer
-uses `O_NOFOLLOW`, FIFOs, and POSIX permissions). Nothing to install. Tests write only to
-temporary directories and set `GIT_CONFIG_GLOBAL` to an empty file, so they never read or
-change your git or Claude configuration. Run Python with `-I` so a stray module in the
+uses `O_NOFOLLOW`, FIFOs, and POSIX permissions). Nothing to install for the installer. Tests
+write only to temporary directories and set `GIT_CONFIG_GLOBAL` to an empty file, so they never
+read or change your git or Claude configuration. Run Python with `-I` so a stray module in the
 working directory cannot be imported.
+
+The source pipeline (`kit/files/tools/convert_*.py`) needs two things this repository does not
+install: a virtual environment outside the repository with `pymupdf` and `pymupdf4llm`, and
+`pdftotext` (poppler) on `PATH`. For example, create the environment once with
+`python3 -m venv ~/.venvs/pdf-md` and `~/.venvs/pdf-md/bin/pip install pymupdf pymupdf4llm`. The tests
+that open PDFs run only when `KB_PDF_PYTHON` names that environment's interpreter; without it they
+are reported as skipped, and the rest of the suite still passes. Run the converter itself with the
+same interpreter.
 
 ## Commands
 
@@ -18,13 +26,14 @@ ambiguous blank.
 | Setup | not applicable (Python 3.9+ and git; standard library only) |
 | Run locally | `python3 -I install.py <target> --git-name "N" --git-email "id+user@users.noreply.github.com"`; add `--dry-run` to preview. It creates a standalone store and prints how to register it with the project template |
 | One focused test | `python3 -I -m unittest discover -s tests -p 'test_kbparse.py'` (any `test_*.py` name) |
-| Full tests | `python3 -I -m unittest discover -s tests` |
+| Full tests | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests` (about 100 seconds; without the variable the PDF tests are skipped) |
+| Run the converter | `<venv>/bin/python -I <project>/tools/convert_sources.py` (`--scan`, `--check`, `--images`, `--release <stem>`; see `docs/kb/source-pipeline.md`) |
 | Check a project | `python3 -I <project>/tools/check_kb.py` (`--require-sources` once sources are saved) |
 | Format | not applicable |
 | Lint or static analysis | not applicable |
 | Type check | not applicable |
 | Build | not applicable |
-| All required checks | `python3 -I -m unittest discover -s tests && git diff --check` |
+| All required checks | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests && git diff --check`; report the number skipped, which must be zero |
 
 ## Verification workflow
 

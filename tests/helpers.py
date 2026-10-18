@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # never leave .pyc files in the kit
@@ -55,3 +56,13 @@ def snapshot(root):
                 with open(path, "rb") as handle:
                     state[rel] = ("file", handle.read())
     return state
+
+
+def pdf_python():
+    """The interpreter named by KB_PDF_PYTHON (one with pymupdf and pymupdf4llm), or None."""
+    path = os.environ.get("KB_PDF_PYTHON", "")
+    return path if path and os.path.isfile(path) and os.access(path, os.X_OK) else None
+
+
+requires_pdf = unittest.skipUnless(
+    pdf_python(), "set KB_PDF_PYTHON to an interpreter with pymupdf and pymupdf4llm to run the PDF tests")

@@ -4,6 +4,8 @@
 
 Start at [playbook/README.md](playbook/README.md). The format and procedures are in
 [docs/kb/](docs/kb/). Run `python3 tools/check_kb.py` to validate the project.
+To scan and convert saved PDFs, run `tools/convert_sources.py` with an interpreter that has
+`pymupdf` and `pymupdf4llm` (see [docs/kb/source-pipeline.md](docs/kb/source-pipeline.md)).
 
 ## Copyright and licensing
 

@@ -1,7 +1,7 @@
 # Source pipeline
 
-Status: Approved (2026-10-17)
-Updated: 2026-10-17
+Status: Approved (2026-10-17); amended 2026-10-18 with the owner's approval
+Updated: 2026-10-18
 
 Requirements for saving sources and converting them to searchable text without letting
 hostile content reach an AI agent as instructions. The layout it serves is in
@@ -113,7 +113,7 @@ are defaults chosen for the first version and are tuned only with a version bump
 
 | Level | Triggers | Result |
 |---|---|---|
-| high | an embedded file or attachment; active content (any of `/JavaScript`, `/JS`, `/Launch`, `/RichMedia`, `/SubmitForm`, `/ImportData`, or an `/OpenAction` or `/AA` whose action is not `GoTo`); a link whose scheme is not in the allowlist `http`, `https`, `mailto`, `doi`; encryption; hidden text matching the phrase list; any Unicode tag character (U+E0000 to U+E007F); an image link with an `http`, `https`, or `data` target | Flagged: the original is quarantined and only a stub with `scan: flagged` is written, with no text and no images. A human reviews the source. |
+| high | an embedded file or attachment; active content (any of `/JavaScript`, `/JS`, `/Launch`, `/RichMedia`, `/SubmitForm`, `/ImportData`, `/XFA`, or an `/OpenAction` or `/AA` whose action is not `GoTo`); a link whose scheme is not in the allowlist `http`, `https`, `mailto`, `doi`; encryption; hidden text matching the phrase list; any Unicode tag character (U+E0000 to U+E007F); an image link with an `http`, `https`, or `data` target | Flagged: the original is quarantined and only a stub with `scan: flagged` is written, with no text and no images. A human reviews the source. |
 | medium | text matching the phrase list in visible text, annotations, or metadata; more than 5 zero-width or bidirectional control characters (U+200B to U+200F, U+202A to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF other than a leading byte-order mark) in the source; hidden text exceeding 200 characters or 5% of extracted text, without phrase matches | Converted, with `scan: review`, finding labels, and a warning banner |
 | clean | none of the above | Converted, with the standard banner |
 
@@ -124,11 +124,20 @@ instructions to ignore or disregard prior instructions, claims that the reader i
 that text is a system prompt, requests to run a command or fetch a URL, and requests to
 conceal something from the user.
 
-Hidden text is text that is white (fill luminance of at least 0.95) with no filled shape or
-image drawn behind it; whose glyph box is under 1.2 points high (judged from the glyph box,
-not the declared font size); that is invisible (render mode 3, or fill opacity under 0.05);
-or whose box lies wholly outside the page. Link targets are judged by scheme, not by a
-label.
+Hidden text is text that is white (fill luminance of at least 0.95) with no visibly filled
+shape or image drawn behind it; whose glyph box is under 1.2 points high (judged from the
+glyph box, not the declared font size); that is invisible (render mode 3, or fill opacity
+under 0.05); or whose box lies wholly outside the page. A shape counts as drawn behind the
+text only when its fill is not itself white (luminance under 0.95) and is at least half
+opaque; a white or transparent shape hides nothing. Link targets are judged by scheme, not by
+a label.
+
+Text that the renderer does not report as drawn (for example text filled with a pattern, whose
+colour cannot be judged) is not covered by those rules. It is checked against the phrase list
+only, by counting the page-text characters the renderer did not account for: a phrase found in
+the page text is treated as hidden text (high) when at least as many characters are unaccounted
+for as the phrase has, or 24, whichever is fewer. It does not count toward the 200-character or
+5% rule.
 
 Rules for agents:
 
@@ -145,6 +154,9 @@ Rules for agents:
   `--images` is given, and an agent is not given files under `text/<stem>/img/` until the
   owner has reviewed them and created a file named `REVIEWED` in that directory.
 - Heuristics miss novel techniques; a `clean` result is not a guarantee.
+- A `Named` action on a link (for example next page or print) is not flagged; it runs nothing
+  the viewer does not already offer. The worker has no memory limit: a decompression bomb is
+  bounded only by the time and output limits below.
 - A vulnerability in the conversion library can be exploited by a hostile PDF; the limits
   and isolation below reduce but do not remove that risk.
 
