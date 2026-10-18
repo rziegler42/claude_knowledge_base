@@ -11,6 +11,7 @@ sys.dont_write_bytecode = True  # never leave .pyc files in the kit
 ROOT = Path(__file__).resolve().parent.parent
 KIT = ROOT / "kit"
 KIT_TOOLS = KIT / "files" / "tools"
+SAFE_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 if str(KIT_TOOLS) not in sys.path:
     sys.path.insert(0, str(KIT_TOOLS))
@@ -34,3 +35,23 @@ def write(base, relative, text="", mode=None):
     if mode is not None:
         os.chmod(target, mode)
     return target
+
+
+def snapshot(root):
+    """Map every path under root to its kind and content, without following symlinks or
+    opening special files (a FIFO would block a read)."""
+    state = {}
+    for base, dirs, files in os.walk(root):
+        for name in dirs + files:
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, root)
+            if os.path.islink(path):
+                state[rel] = ("link", os.readlink(path))
+            elif os.path.isdir(path):
+                state[rel] = ("dir",)
+            elif not os.path.isfile(path):
+                state[rel] = ("special",)
+            else:
+                with open(path, "rb") as handle:
+                    state[rel] = ("file", handle.read())
+    return state

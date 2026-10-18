@@ -1,6 +1,6 @@
 # Next plan
 
-Status: Approved (2026-10-18, by the owner; approval of the plan is not an instruction to start)
+Status: In Progress (approved 2026-10-18 by the owner; implementation started 2026-10-18 on the owner's request)
 Created: 2026-10-18
 
 ## Goal
@@ -230,5 +230,58 @@ Proposed until the owner approves it.
 
 ## Result
 
-<!-- Complete this only after verification. Archive the plan according to
-README.md, then reset this file to the empty template. -->
+Implemented 2026-10-18, uncommitted at the time of writing. Verification run:
+
+- `python3 -I -B -m unittest discover -s tests`: 242 tests pass (262 before, so 20 fewer: the removed
+  add-to cases outweigh the new descriptor, hint, and removed-option tests).
+  `git diff --check` is clean. The suite leaves no `__pycache__` in the kit: the checker subprocess
+  tests now pass `-B`.
+- Manual smoke: a store created into a scratch directory passes its own `tools/check_kb.py`
+  (0 errors, 0 warnings).
+- End-to-end check (spec criterion 19), scratch paths only, with the template's `install.py`
+  and `--registry <scratch file>` on every command: `--register` of a store in `my_kb`
+  (no suffix needed) and of one in `My KB` with the suggested `--name my-kb`; `--list` showed both
+  `ok`; `install.py <project> --with my_kb,my-kb` wrote two distinct `agents-guidance` blocks pointing at
+  `../my_kb` and `../My KB`. Nothing was written in either repository or in the real registry.
+- Security review: one `security-reviewer` pass with scratch experiments (hint quoting over 29
+  hostile directory names, verbatim `template-module/`, the loader's refusals, path rules, hostile
+  git configuration and environment). No Critical, High, or Medium finding. Two Low findings:
+  an empty-string target installed into the current directory (fixed, regression test
+  `test_empty_target_does_not_install_into_the_current_directory` failed first); on a case-insensitive
+  filesystem the hint prints the path in the case the owner typed (accepted: ADR 0002 already lists
+  name aliases beyond case folding as unexercised). The reviewer also noted two
+  `@module-slot` markers in this repository's own `README.md` and `docs/development.md`; those are the
+  template's slots for this repository, not kit leftovers, and stay.
+
+Tests removed or replaced (their subject no longer exists), by file:
+
+- `test_install_addto.py` (26 tests): the whole add-to suite, deleted.
+- `test_install_create.py`: `test_slots_are_applied_with_markers_kept` (replaced by
+  `test_root_files_have_no_markers_or_managed_blocks`), `test_skip_unsafe_entries_is_rejected_when_creating`
+  (now `Criterion5RemovedOptions`), `test_module_json_rules` and `test_module_json_missing_or_not_json`
+  (now `test_kit_json_rules` and `test_kit_json_missing_or_not_json`), `test_unknown_slot_without_a_host_is_refused`.
+- `test_install_hardening.py`: the fifo, symlink, and size-cap cases that targeted an existing project
+  or its content directories (`test_fifo_as_a_host_file`, `test_fifo_at_a_kit_destination`,
+  `test_fifo_in_a_content_directory`, `test_fifo_is_skipped_and_listed_with_the_flag`,
+  `test_symlinked_host_is_not_read_or_written_through`, `test_symlink_at_a_kit_destination`,
+  `test_symlink_in_a_content_directory`, `test_symlinked_content_directory`,
+  `test_symlinked_parent_of_a_kit_file`, `test_symlinked_parent_of_a_host`,
+  `test_symlink_is_skipped_never_followed_with_the_flag`, `test_over_cap_host`,
+  `test_over_cap_file_in_a_content_directory_is_refused_or_skipped`, `test_over_cap_file_at_a_kit_destination`,
+  `test_hostile_project_git_config_is_never_consulted`); the kit-side equivalents are now `KitReadTests`.
+  `test_symlinked_target_directory` and `test_skip_flag_is_rejected_when_creating` are covered by the create
+  and removed-option tests. `test_hostile_environment_cannot_redirect_or_run_a_program` was kept.
+- `test_security_regressions.py`: `test_case_variant_of_the_starter_is_refused_for_add_to`,
+  `test_identity_flags_are_rejected_with_add_to`, `test_deep_content_tree_is_refused_cleanly`, the four
+  block-parser cases (`test_tilde_fence_inside_a_backtick_fence_does_not_close_it`,
+  `test_unclosed_fence_is_refused`, `test_indented_code_marker_is_not_a_marker`, `test_crlf_host_keeps_crlf`),
+  and `test_existing_host_keeps_its_mode`. The case-variant, containment, escaping, and long-path checks
+  were converted to creation.
+- `test_kit.py`: `test_every_slot_has_a_host_in_base`, `test_module_files_are_json`, the readme and
+  gitignore slot tests (now `RootFileTests` and `DescriptorTests`), and the roadmap-link test (now also
+  covers decisions).
+
+Unresolved: none open. Accepted residual: the case-insensitive path display above. Next: owner review,
+commit, and archive (`ask-codex archive` before archiving, as for plan 0001).
+
+<!-- Archive the plan according to README.md, then reset this file to the empty template. -->

@@ -1,3 +1,5 @@
+# REPLACE_WITH_PROJECT_NAME
+
 ## Knowledge base
 
 Start at [playbook/README.md](playbook/README.md). The format and procedures are in

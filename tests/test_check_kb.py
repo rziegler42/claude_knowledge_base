@@ -60,11 +60,11 @@ class FreshProjectTests(CheckCase):
     def test_cli_exit_status(self):
         script = helpers.KIT_TOOLS / "check_kb.py"
         env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-        ok = subprocess.run([sys.executable, "-I", str(script), "--root", str(self.proj)],
+        ok = subprocess.run([sys.executable, "-I", "-B", str(script), "--root", str(self.proj)],
                             capture_output=True, text=True, env=env)
         self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
         (self.proj / "kb.json").unlink()
-        bad = subprocess.run([sys.executable, "-I", str(script), "--root", str(self.proj)],
+        bad = subprocess.run([sys.executable, "-I", "-B", str(script), "--root", str(self.proj)],
                              capture_output=True, text=True, env=env)
         self.assertEqual(bad.returncode, 1)
         self.assertIn("kb.json", bad.stdout)

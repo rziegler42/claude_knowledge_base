@@ -1,4 +1,5 @@
-"""Regression tests for the findings of the adversarial security review (plan Increment F)."""
+"""Regression tests for the findings of the adversarial security reviews of the installer
+and the checker."""
 import contextlib
 import io
 import json
@@ -13,11 +14,11 @@ from unittest import mock
 import helpers
 import check_kb
 import kbparse
-from projects import add_catalog, add_domain, add_entry, good_project
+from projects import good_project
 
 sys.path.insert(0, str(helpers.ROOT))
 import install  # noqa: E402
-from test_install_addto import SAFE_ENV, snapshot, template_project, marker  # noqa: E402
+from helpers import SAFE_ENV  # noqa: E402
 
 IDENT = ["--git-name", "T", "--git-email", "t@users.noreply.github.com"]
 
@@ -84,13 +85,8 @@ class M2ContainmentByIdentity(Scratch):
         code, out = run([str(variant / "newkb"), *IDENT, "--dry-run"])
         self.assertEqual(code, 1, out)
 
-    def test_case_variant_of_the_starter_is_refused_for_add_to(self):
-        variant = self.case_variant()
-        code, out = run(["--add-to", str(variant / "tests"), "--dry-run"])
-        self.assertEqual(code, 1, out)
-
     def test_a_target_containing_the_starter_is_refused(self):
-        code, out = run(["--add-to", str(helpers.ROOT.parent), "--dry-run"])
+        code, out = run([str(helpers.ROOT.parent), *IDENT, "--dry-run"])
         self.assertEqual(code, 1, out)
         self.assertIn("starter", out)
 
@@ -222,84 +218,17 @@ class L1FullMatch(Scratch):
 
 class L2Escaping(Scratch):
     def test_install_messages_escape_control_characters(self):
-        proj = self.tmp / "proj"
-        template_project(proj)
-        hostile = proj / "domains" / "\x1b[31mred"
-        hostile.mkdir(parents=True)
-        (hostile / "f.md").write_text("x")
-        code, out = run(["--add-to", str(proj)])
+        target = self.tmp / "\x1b[31mred"
+        code, out = run([str(target), *IDENT, "--name", "kb"])
         self.assertEqual(code, 1)
         self.assertNotIn("\x1b", out)
+        self.assertFalse(target.exists())
 
     def test_checker_output_escapes_control_characters(self):
         finding = check_kb.Finding("domains/\x1b[31mred/README.md", 3, "bad\x07 thing")
         line = check_kb.format_finding("ERROR", finding)
         self.assertNotIn("\x1b", line)
         self.assertNotIn("\x07", line)
-
-
-class L3IdentityFlags(Scratch):
-    def test_identity_flags_are_rejected_with_add_to(self):
-        proj = self.tmp / "proj"
-        template_project(proj)
-        for extra in (["--git-email", "a@b.c"], ["--git-name", "n"], ["--use-global-git-identity"]):
-            with self.subTest(extra=extra):
-                before = snapshot(proj)
-                code, out = run(["--add-to", str(proj), *extra])
-                self.assertEqual(code, 1, out)
-                self.assertEqual(snapshot(proj), before)
-
-
-class L4DeepTrees(Scratch):
-    def test_deep_content_tree_is_refused_cleanly(self):
-        proj = self.tmp / "proj"
-        template_project(proj)
-        path = proj / "text"
-        for _ in range(100):
-            path = path / "d"
-        path.mkdir(parents=True)
-        before = snapshot(proj)
-        code, out = run(["--add-to", str(proj)])
-        self.assertEqual(code, 1, out)
-        self.assertNotIn("Traceback", out)
-        self.assertEqual(snapshot(proj), before)
-
-
-class L5BlockParserFidelity(Scratch):
-    def add(self, name, text):
-        proj = self.tmp / name
-        template_project(proj)
-        (proj / "README.md").write_bytes(text.encode() if isinstance(text, str) else text)
-        before = snapshot(proj)
-        code, out = run(["--add-to", str(proj)])
-        return proj, before, code, out
-
-    def test_tilde_fence_inside_a_backtick_fence_does_not_close_it(self):
-        m = marker("readme-docs", "README.md")
-        proj, before, code, out = self.add("a", f"# T\n\n```\n~~~\n{m}\n```\n")
-        self.assertEqual(code, 1, out)
-        self.assertEqual(snapshot(proj), before)
-
-    def test_unclosed_fence_is_refused(self):
-        proj, before, code, out = self.add("b", "# T\n\n```\ncode\n")
-        self.assertEqual(code, 1, out)
-        self.assertEqual(snapshot(proj), before)
-
-    def test_indented_code_marker_is_not_a_marker(self):
-        m = marker("readme-docs", "README.md")
-        proj, before, code, out = self.add("c", f"# T\n\n    {m}\n")
-        self.assertEqual(code, 0, out)
-        text = (proj / "README.md").read_text()
-        self.assertTrue(text.startswith(f"# T\n\n    {m}\n"))  # the indented line was left alone
-        self.assertIn("BEGIN module:knowledge-base slot:readme-docs", text.split(f"    {m}\n", 1)[1])
-
-    def test_crlf_host_keeps_crlf(self):
-        m = marker("readme-docs", "README.md")
-        proj, before, code, out = self.add("d", f"# T\r\n\r\n{m}\r\n")
-        self.assertEqual(code, 0, out)
-        data = (proj / "README.md").read_bytes()
-        self.assertNotIn(b"\n", data.replace(b"\r\n", b""))
-        self.assertIn(b"BEGIN module:knowledge-base slot:readme-docs -->\r\n", data)
 
 
 class L6MigrationTypes(Scratch):
@@ -349,18 +278,9 @@ class SecondReviewRegressions(Scratch):
         self.assertEqual(list(victim.iterdir()), [])
 
     def test_overlong_path_component_is_refused_cleanly(self):
-        code, out = run(["--add-to", str(self.tmp / ("x" * 300))])
+        code, out = run([str(self.tmp / ("x" * 300)), *IDENT, "--name", "kb"])
         self.assertEqual(code, 1, out)
-
-    def test_existing_host_keeps_its_mode(self):
-        proj = self.tmp / "proj"
-        template_project(proj)
-        for rel in ("AGENTS.md", ".gitignore"):
-            os.chmod(proj / rel, 0o600)
-        code, out = run(["--add-to", str(proj)])
-        self.assertEqual(code, 0, out)
-        for rel in ("AGENTS.md", ".gitignore"):
-            self.assertEqual(oct(os.stat(proj / rel).st_mode & 0o777), "0o600", rel)
+        self.assertNotIn("Traceback", out)
 
     def test_reviewed_lookup_is_by_token(self):
         proj = good_project(self.tmp / "p")

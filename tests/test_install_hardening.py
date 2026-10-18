@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import shutil
 import signal
 import sys
 import unittest
@@ -10,17 +11,17 @@ import helpers
 
 sys.path.insert(0, str(helpers.ROOT))
 import install  # noqa: E402
-from test_install_addto import SAFE_ENV, snapshot, template_project  # noqa: E402
 
+SAFE_ENV = helpers.SAFE_ENV
 IDENT = ["--git-name", "T", "--git-email", "t@users.noreply.github.com"]
 
 
-def run(argv, env=None):
+def run(argv, env=None, kit=None):
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.dict(os.environ, {**SAFE_ENV, **(env or {})}), \
             mock.patch("sys.stdin", io.StringIO("")), \
             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = install.main(argv)
+        code = install.main(argv, kit_dir=kit)
     return code, out.getvalue() + err.getvalue()
 
 
@@ -42,136 +43,71 @@ class HardenCase(unittest.TestCase):
         cm = helpers.scratch()
         self.tmp = cm.__enter__()
         self.addCleanup(cm.__exit__, None, None, None)
-        self.proj = self.tmp / "existing"
-        template_project(self.proj)
+        self.target = self.tmp / "fresh-kb"
         self.outside = self.tmp / "outside.txt"
         self.outside.write_text("untouched\n")
+        self.kits = 0
 
-    def add(self, *extra):
+    def make_kit(self):
+        self.kits += 1
+        kit = self.tmp / f"kit{self.kits}"
+        shutil.copytree(helpers.KIT, kit, ignore=shutil.ignore_patterns("__pycache__"))
+        return kit
+
+    def create(self, *extra, kit=None, env=None):
         with Alarm():
-            return run(["--add-to", str(self.proj), *extra])
+            return run([str(self.target), *IDENT, *extra], env=env, kit=kit)
 
-    def refuses(self, *extra):
-        before = snapshot(self.proj)
-        code, out = self.add(*extra)
+    def refuses_kit(self, kit):
+        code, out = self.create(kit=kit)
         self.assertEqual(code, 1, out)
-        self.assertEqual(snapshot(self.proj), before)
+        self.assertFalse(self.target.exists())
         self.assertEqual(self.outside.read_text(), "untouched\n")
         return out
 
 
-class FifoTests(HardenCase):
-    def test_fifo_as_a_host_file(self):
-        (self.proj / "README.md").unlink()
-        os.mkfifo(self.proj / "README.md")
-        self.refuses()
-        self.refuses("--skip-unsafe-entries")  # a needed host file cannot be skipped
+class KitReadTests(HardenCase):
+    def test_fifo_in_the_kit_does_not_hang_and_is_refused(self):
+        kit = self.make_kit()
+        os.mkfifo(kit / "files" / "pipe")
+        self.refuses_kit(kit)
 
-    def test_fifo_at_a_kit_destination(self):
-        os.mkfifo(self.proj / "kb.json")
-        self.refuses()
+    def test_fifo_as_kit_json_does_not_hang(self):
+        kit = self.make_kit()
+        (kit / "kit.json").unlink()
+        os.mkfifo(kit / "kit.json")
+        self.refuses_kit(kit)
 
-    def test_fifo_in_a_content_directory(self):
-        (self.proj / "catalog").mkdir()
-        os.mkfifo(self.proj / "catalog" / "pipe")
-        self.refuses()
+    def test_symlinked_kit_json_is_refused(self):
+        kit = self.make_kit()
+        (kit / "kit.json").unlink()
+        os.symlink(self.outside, kit / "kit.json")
+        self.refuses_kit(kit)
 
-    def test_fifo_is_skipped_and_listed_with_the_flag(self):
-        (self.proj / "catalog").mkdir()
-        os.mkfifo(self.proj / "catalog" / "pipe")
-        code, out = self.add("--skip-unsafe-entries")
-        self.assertEqual(code, 0, out)
-        self.assertIn("catalog/pipe", out)
-        self.assertTrue((self.proj / "catalog" / "pipe").exists())
+    def test_symlinked_migrations_json_is_refused(self):
+        kit = self.make_kit()
+        (kit / "migrations.json").unlink()
+        os.symlink(self.outside, kit / "migrations.json")
+        self.refuses_kit(kit)
 
+    def test_symlinked_descriptor_directory_is_refused(self):
+        kit = self.make_kit()
+        shutil.move(str(kit / "files" / "template-module"), str(self.tmp / "elsewhere"))
+        os.symlink(self.tmp / "elsewhere", kit / "files" / "template-module")
+        self.refuses_kit(kit)
 
-class SymlinkTests(HardenCase):
-    def test_symlinked_host_is_not_read_or_written_through(self):
-        (self.proj / "README.md").unlink()
-        os.symlink(self.outside, self.proj / "README.md")
-        self.refuses()
-        self.refuses("--skip-unsafe-entries")
-
-    def test_symlink_at_a_kit_destination(self):
-        os.symlink(self.outside, self.proj / "kb.json")
-        self.refuses()
-
-    def test_symlink_in_a_content_directory(self):
-        (self.proj / "catalog").mkdir()
-        os.symlink(self.outside, self.proj / "catalog" / "link.md")
-        self.refuses()
-
-    def test_symlinked_content_directory(self):
-        elsewhere = self.tmp / "elsewhere"
-        elsewhere.mkdir()
-        os.symlink(elsewhere, self.proj / "domains")
-        self.refuses()
-        self.assertEqual(list(elsewhere.iterdir()), [])
-
-    def test_symlinked_parent_of_a_kit_file(self):
-        elsewhere = self.tmp / "elsewhere"
-        elsewhere.mkdir()
-        os.symlink(elsewhere, self.proj / "tools")
-        self.refuses()
-        self.assertEqual(list(elsewhere.iterdir()), [])
-
-    def test_symlinked_parent_of_a_host(self):
-        shadow = self.tmp / "shadow"
-        shadow.mkdir()
-        (shadow / "README.md").write_text("# shadow\n<!-- @module-slot: docs-index -->\n")
-        (self.proj / "docs" / "README.md").unlink()
-        (self.proj / "docs").rmdir() if not os.listdir(self.proj / "docs") else None
-        os.symlink(shadow, self.proj / "docs")
-        self.refuses()
-        self.refuses("--skip-unsafe-entries")
-        self.assertEqual((shadow / "README.md").read_text(), "# shadow\n<!-- @module-slot: docs-index -->\n")
-
-    def test_symlink_is_skipped_never_followed_with_the_flag(self):
-        (self.proj / "catalog").mkdir()
-        os.symlink(self.outside, self.proj / "catalog" / "link.md")
-        code, out = self.add("--skip-unsafe-entries")
-        self.assertEqual(code, 0, out)
-        self.assertIn("catalog/link.md", out)
-        self.assertEqual(self.outside.read_text(), "untouched\n")
-        self.assertTrue(os.path.islink(self.proj / "catalog" / "link.md"))
-
-    def test_symlinked_target_directory(self):
-        link = self.tmp / "link"
-        os.symlink(self.proj, link)
-        code, out = run(["--add-to", str(link)])
-        self.assertEqual(code, 1, out)
-
-
-class SizeCapTests(HardenCase):
-    def big(self, path):
-        with open(path, "wb") as handle:
-            handle.truncate(install.MAX_READ + 1)
-
-    def test_over_cap_host(self):
-        self.big(self.proj / "README.md")
-        self.refuses()
-        self.refuses("--skip-unsafe-entries")
-
-    def test_over_cap_file_in_a_content_directory_is_refused_or_skipped(self):
-        (self.proj / "sources").mkdir()
-        self.big(self.proj / "sources" / "huge.bin")
-        self.refuses()
-        code, out = self.add("--skip-unsafe-entries")
-        self.assertEqual(code, 0, out)
-        self.assertIn("sources/huge.bin", out)
-
-    def test_over_cap_file_at_a_kit_destination(self):
-        self.big(self.proj / "kb.json")
-        self.refuses()
+    def test_over_cap_kit_json_is_refused(self):
+        kit = self.make_kit()
+        with open(kit / "kit.json", "wb") as handle:
+            handle.truncate(install.MAX_JSON + 1)
+        self.refuses_kit(kit)
 
 
 class PathRuleTests(HardenCase):
     def test_git_component_in_the_target_is_refused_case_insensitively(self):
         for name in (".GIT", ".Git", ".git"):
             with self.subTest(name=name):
-                target = self.tmp / name / "proj"
-                target.mkdir(parents=True, exist_ok=True)  # the filesystem may fold case
-                code, out = run(["--add-to", str(target)])
+                code, out = run([str(self.tmp / name / "proj"), *IDENT])
                 self.assertEqual(code, 1, out)
 
     def test_check_rel_rules(self):
@@ -181,11 +117,10 @@ class PathRuleTests(HardenCase):
                 install.check_rel(bad)
         install.check_rel("tools/check_kb.py")
 
-    def test_skip_flag_is_rejected_when_creating(self):
-        target = self.tmp / "new"
-        code, out = run([str(target), *IDENT, "--skip-unsafe-entries"])
-        self.assertEqual(code, 1)
-        self.assertFalse(target.exists())
+    def test_template_module_is_starter_owned_and_verbatim(self):
+        self.assertTrue(install.owned("template-module/module.json"))
+        self.assertTrue(install.verbatim("template-module/slots/agents-guidance.md"))
+        self.assertFalse(install.verbatim("README.md"))
 
 
 class HostileGitTests(HardenCase):
@@ -198,35 +133,46 @@ class HostileGitTests(HardenCase):
                          ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_SYSTEM"])
         self.assertIn("PATH", cleaned)
 
-    def test_hostile_environment_cannot_redirect_or_run_a_program(self):
-        sentinel = self.tmp / "ran"
-        script = self.tmp / "evil.sh"
+    def script(self, name):
+        sentinel = self.tmp / f"ran-{name}"
+        script = self.tmp / f"{name}.sh"
         script.write_text(f"#!/bin/sh\ntouch {sentinel}\n")
         script.chmod(0o755)
+        return script, sentinel
+
+    def test_hostile_environment_cannot_redirect_or_run_a_program(self):
+        script, sentinel = self.script("env")
         decoy = self.tmp / "decoy"
         decoy.mkdir()
-        target = self.tmp / "fresh-kb"
         env = {"GIT_DIR": str(decoy), "GIT_WORK_TREE": str(decoy), "GIT_CONFIG_COUNT": "1",
                "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": str(script),
                "GIT_EXEC_PATH": str(decoy), "GIT_SSH_COMMAND": str(script)}
-        code, out = run([str(target), *IDENT], env=env)
+        code, out = self.create(env=env)
         self.assertEqual(code, 0, out)
-        self.assertTrue((target / ".git" / "HEAD").is_file())
+        self.assertTrue((self.target / ".git" / "HEAD").is_file())
         self.assertEqual(list(decoy.iterdir()), [])
         self.assertFalse(sentinel.exists())
 
-    def test_hostile_project_git_config_is_never_consulted(self):
-        sentinel = self.tmp / "ran2"
-        script = self.tmp / "evil2.sh"
-        script.write_text(f"#!/bin/sh\ntouch {sentinel}\n")
-        script.chmod(0o755)
-        (self.proj / ".git").mkdir()
-        (self.proj / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
-        (self.proj / ".git" / "config").write_text(
-            f"[core]\n\tfsmonitor = {script}\n\thooksPath = {self.tmp}\n[alias]\n\tstatus = !{script}\n")
-        code, out = self.add()
+    def test_global_git_configuration_naming_hooks_or_helpers_runs_nothing(self):
+        script, sentinel = self.script("config")
+        hooks = self.tmp / "hooks"
+        hooks.mkdir()
+        for hook in ("pre-commit", "post-checkout", "post-init", "reference-transaction"):
+            shutil.copy(script, hooks / hook)
+        templates = self.tmp / "templates"
+        (templates / "hooks").mkdir(parents=True)
+        shutil.copy(script, templates / "hooks" / "post-checkout")
+        config = self.tmp / "gitconfig"
+        config.write_text(
+            f"[core]\n\tfsmonitor = {script}\n\thooksPath = {hooks}\n\tpager = {script}\n"
+            f"\tsshCommand = {script}\n\tattributesFile = {self.tmp}/attrs\n"
+            f"[init]\n\ttemplateDir = {templates}\n[alias]\n\tinit = !{script}\n"
+            f"[filter \"x\"]\n\tclean = {script}\n")
+        code, out = self.create(env={"GIT_CONFIG_GLOBAL": str(config)})
         self.assertEqual(code, 0, out)
         self.assertFalse(sentinel.exists())
+        hooks_dir = self.target / ".git" / "hooks"
+        self.assertEqual([p.name for p in hooks_dir.iterdir()] if hooks_dir.exists() else [], [])
 
 
 if __name__ == "__main__":

@@ -1,90 +1,93 @@
 # Installer
 
-Status: Approved (2026-10-17)
-Updated: 2026-10-17
+Status: Approved (2026-10-18), revising the text approved 2026-10-17
+Updated: 2026-10-18
 
 Requirements for the installer that creates a new, independently tracked knowledge-base
-project from this starter, adds the knowledge-base layer to an existing project, and upgrades
-such a project later. The layer it installs follows
+store from this starter and upgrades such a store later. A store ships a small descriptor so
+the project template can register it and insert guidance into other projects; this
+repository does not do that insertion. The layer it installs follows
 [knowledge-base-format.md](knowledge-base-format.md). Acceptance criteria are tagged with the
-roadmap candidate that delivers them: `[C2]` create, layer, and check; `[C5]` upgrade.
+roadmap candidate that delivers them: `[C2]` create and check (delivered, kept where
+unchanged), `[C2a]` standalone stores (this revision), `[C5]` upgrade.
+
+This revision replaces the earlier `--add-to` layering and the kit's slot and marker
+machinery; ADR 0003 (listed under Related) records the decision.
 
 ## Scope
 
-- Creating a project in an empty directory: files, a fresh git repository, an explicit local
+- Creating a store in an empty directory: files, a fresh git repository, an explicit local
   identity.
-- Adding the knowledge-base layer to an existing project.
-- Recording what was installed so the project can be upgraded.
-- Upgrading the starter-owned files and blocks of an existing project.
+- Shipping the template descriptor, `template-module/`, in every store.
+- Printing how to register the store with the template.
+- Recording what was installed so the store can be upgraded.
+- Upgrading the starter-owned files of an existing store.
 
 ## Non-goals
 
+- Layering the knowledge-base layer onto an existing project. The template's `--with` and
+  `--add` do that with the descriptor; this installer has no `--add-to`.
+- Registering a store with the template, locating the template, or running any of its code.
+  The installer prints a hint and runs nothing.
 - Cloning this repository as the way to start. The starter is a generator; a clone of it is
   not a knowledge base.
 - Depending on `claude_project_template` or any other repository. The installer is standalone
   and uses only Python 3.9+ and git.
-- Shipping plans, roadmaps, ADRs, or other process documents. A project that wants them gets
+- Shipping plans, roadmaps, ADRs, or other process documents. A store that wants them gets
   them from elsewhere (for example the project template) or adds its own.
-- Creating domains, entries, or sources. The project's own tools do that
+- Creating domains, entries, or sources. The store's own tools do that
   ([domain-lifecycle.md](domain-lifecycle.md)).
-- Merging a project's own edits to starter-owned files or blocks. They are skipped and
-  reported, never overwritten.
+- Merging a store's own edits to starter-owned files. They are skipped and reported, never
+  overwritten.
 - Defending against a concurrent local attacker, or against a malicious starter checkout.
 
-## The kit is a module
+## The kit
 
-The knowledge-base layer is a single module in the project template's current module format,
-so a template that supports remote modules can load it unchanged and this installer needs no
-format of its own:
+The kit is the tree the installer copies into a new store:
 
 ```text
 kit/
-  module.json        module metadata, validated as below
+  kit.json           kit metadata, validated as below
   migrations.json    ordered schema migration steps; at schema 1: {"steps": []}
-  files/             copied verbatim to the same relative path
-  slots/<slot>.md    fragments inserted at @module-slot: <slot> marker lines
-  base/              files used only when the target is an empty directory
+  files/             copied to the same relative path in the store
 ```
 
-- A fragment is inserted at the marker line `@module-slot: <slot>` inside the host file's own
-  comment syntax, wrapped in `BEGIN module:knowledge-base slot:<slot>` and
-  `END module:knowledge-base slot:<slot>` lines, and the marker stays so a later run is a
-  deterministic patch.
-- The slots used are `agents-guidance` (`AGENTS.md`), `readme-docs` (`README.md`), `docs-index`
-  (`docs/README.md`), and `gitignore` (`.gitignore`). These names are the project template's,
-  so a project that came from the template already has the markers.
-- `base/` holds a small `README.md`, `AGENTS.md`, `docs/README.md`, and `.gitignore`
-  containing those markers, used only to start an empty directory. A slot whose host file is
-  neither present in the target nor in `base/` is not installed.
-- The installer implements only what this one module needs: files, slots, markers, and the
-  hint. It does not resolve `requires` or other modules.
-- If the template's module format changes, this kit follows it deliberately in a later change;
-  it is not tracked automatically.
+There is no `module.json`, `slots/`, or `base/` in the kit. The name `module.json` belongs to
+the template descriptor inside the store (below), so the kit's own metadata is `kit.json`.
 
-### `module.json`
+`files/` holds everything a new store receives, including the root `README.md`, `AGENTS.md`,
+`docs/README.md`, and `.gitignore`, which are ordinary files with no markers or managed
+blocks.
 
-A JSON object of at most 64 KiB with these keys; the installer refuses a kit that fails any
-rule, before writing anything:
+### Ownership
+
+- **Starter-owned** (replaced by an upgrade, listed in the manifest): `kb.json`, `tools/`,
+  `docs/kb/`, `domains/_skeleton/`, and `template-module/`.
+- **Project-owned** from the moment of creation: every other path, including the four root
+  files above, `catalog/`, `playbook/`, `sources/`, `text/`, and `domains/<name>/`. An upgrade
+  never reads them for modification or writes them.
+- **Verbatim** (no placeholder substitution): `docs/kb/`, `tools/`, and `template-module/`.
+  The specifications mention the placeholder as text, and the descriptor's placeholders
+  belong to the template.
+
+### `kit.json`
+
+A JSON object of at most 64 KiB; the installer refuses a kit that fails any rule, before
+writing anything:
 
 | Key | Type | Rule |
 |---|---|---|
-| `name` | string | Always `knowledge-base` |
 | `kit_version` | string | Printable single-line text; recorded in the manifest |
-| `description` | string | Printable single-line text |
-| `order` | integer | Present for the template's format; ignored here |
-| `requires` | list of strings | Must be empty; this installer does not resolve other modules |
 | `hint` | string | Printable single-line text, printed after a successful run |
 
-Unknown keys are ignored. A missing key, a wrong type, or a non-empty `requires` refuses the
-run.
+Unknown keys are ignored. A missing key or a wrong type refuses the run.
 
 ### `migrations.json`
 
 A JSON object of at most 1 MiB, `{"steps": [...]}`. Each step is
 `{"from": N, "to": N+1, "ops": [...]}`, and the steps must form one contiguous chain starting
 at schema 1. Each op is one of a closed set, and every path is relative, has no `..` or
-`.git` component, and lies under a starter-owned prefix (the check for owned prefixes uses
-the same rule as the owned set below):
+`.git` component, and lies under a starter-owned prefix:
 
 | Op | Fields | Effect |
 |---|---|---|
@@ -94,109 +97,124 @@ the same rule as the owned set below):
 
 A **conflict** (an edited or unexpected file where an op needs to act) is fatal: the upgrade
 refuses before the first write, lists the conflicting paths, and does not advance `kb_schema`.
-The owner resolves it by hand (restoring the file, or following `docs/kb/`) and reruns. A
-conflict on an `add` (the path exists and differs) is the same. After an op completes the
-manifest changes as follows: `add` and `replace` record the checksum of the written file,
-and `remove` deletes the path's key from `files`.
+The owner resolves it by hand (restoring the file, or following `docs/kb/`) and reruns.
+After an op completes the manifest changes as follows: `add` and `replace` record the
+checksum of the written file, and `remove` deletes the path's key from `files`.
 
 Ops run in order within a step and steps in order. Each op is idempotent, so a rerun after a
 crash completes the remaining ops and reaches the same final state as an uninterrupted
-upgrade, and an op that is
-invalid, names a path outside the owned prefixes, or names a missing `source` refuses the
-whole upgrade before the first write. `remove` is the only way the installer ever deletes a
-project file.
+upgrade. An op that is invalid, names a path outside the owned prefixes, or names a missing
+`source` refuses the whole upgrade before the first write. `remove` is the only way the
+installer ever deletes a store file.
 
-### Block parsing
+## The template descriptor
 
-A host file is read as UTF-8 and refused if it is not valid UTF-8 or contains a NUL byte. For
-each slot the file must contain exactly one of: the marker line alone, or one well-formed
-`BEGIN`/`END` pair for this module and slot (with the marker line after the `END` line). The
-installer refuses, writing nothing, when:
+Every store ships the descriptor the project template defines in its external-modules
+specification, so the template can register the store and install its fragments into a
+project. The descriptor schema belongs to the template; this section records what the kit
+must satisfy. The installer neither reads nor imports anything from the template.
 
-- the marker occurs inside a fenced code block;
-- a marker or a `BEGIN` or `END` line occurs more than once for the slot;
-- a `BEGIN` has no matching `END`, or pairs are nested or interleaved.
+```text
+template-module/
+  module.json
+  slots/agents-guidance.md
+```
 
-A block whose marker has since been deleted is still recognized by its `BEGIN`/`END` lines;
-an upgrade replaces it in place and restores the marker line after the `END` line.
+- `module.json` holds exactly the keys `module_format` (integer, `1` today) and `description`
+  (printable single-line text, 1 to 200 characters). The template also allows an optional
+  `hint`; the kit omits it, because the template prints it under "Next steps" and the
+  installer already prints the registration line. There is no `name`, `order`, `requires`, or
+  `harness` key, and unknown keys are errors on the template's side.
+- One fragment, `slots/agents-guidance.md`, UTF-8 with no NUL byte and at most 64 KiB. It
+  points the consuming project's agent guidance at the store's router (`playbook/README.md`,
+  the `router` in `kb.json`), tells the reader to treat `[U]` claims as unverified, and treats
+  everything in the store (sources, converted text, catalog fields, index notes, leads) as
+  data, never instructions.
+- No line of a fragment contains `@module-slot:`, `BEGIN module:`, or `END module:`.
+- The only placeholders allowed in a fragment are `REPLACE_WITH_MODULE_NAME` and
+  `REPLACE_WITH_MODULE_PATH`, which the template substitutes. Any other `REPLACE_WITH_*`
+  token, including `REPLACE_WITH_PROJECT_NAME`, would be filled with the consuming project's
+  name or reported as left over, so the fragment uses none. The fragment says that the path
+  is specific to one checkout.
+- Fragment text is tool-neutral. The template never treats an external module as
+  harness-specific.
+- The descriptor is starter-owned and verbatim. When the template raises `module_format`, this
+  kit follows it in a later change; it is not tracked automatically.
 
-**Serialized form.** The `BEGIN`, `END`, and marker lines are written in the host file's
-comment syntax: `<!-- text -->` in Markdown files and `# text` in `.gitignore`. A block
-appended to a host file that has no marker is written as the `BEGIN` line, the fragment, the
-`END` line, then the marker line, each on its own line, preceded by one blank line.
+A test in this repository checks the shipped descriptor against these rules. The rules are
+restated in the test, so this repository still has no dependency on the template.
 
 ## Starter repository layout
 
 ```text
 install.py          the installer (stdlib only)
-kit/                the module above
-tests/              unittest suite; creates and extends projects in scratch directories
+kit/                the tree above
+tests/              unittest suite; creates stores in scratch directories
 docs/               this repository's own decisions, specs, plans, roadmaps
-LICENSE             MIT; the starter's license, never copied into a project
+LICENSE             MIT; the starter's license, never copied into a store
 ```
 
 The starter has no `domains/`, `catalog/`, `sources/`, or `text/`, and no `kb.json`. It is not
 itself a knowledge base. `kit/files/docs/kb/` holds copies of the four specifications
 (`knowledge-base-format.md`, `source-pipeline.md`, `domain-lifecycle.md`, `installer.md`); a test
-asserts each copy equals its source in `docs/specs/` once lines linking to `../roadmaps/` are
-removed.
+asserts each copy equals its source in `docs/specs/` once lines linking to `../roadmaps/` or
+`../decisions/` are removed.
 
-## Create a project
+## Create a store
 
 ```sh
 ./install.py ../my-kb --git-name "Your Name" --git-email "id+user@users.noreply.github.com"
 ./install.py ../my-kb --dry-run
 ```
 
+Options: `--name`, `--git-name`, `--git-email`, `--use-global-git-identity`, and `--dry-run`.
+There is no `--add-to` and no `--skip-unsafe-entries`; either is an unknown option and
+exits with the usage status.
+
 - The project name is the target directory's name unless `--name` is given. A name matches
   `[A-Za-z0-9._ -]{1,64}` and does not start with a space, dot, or hyphen, because it is
   substituted into JSON and front matter.
 - The target must not exist or must be an empty directory. It must not be, or be inside, this
   repository, checked by comparing resolved real paths (see Trust model).
-- The base files are written, then the module is applied as in the next section.
+- The kit's `files/` are written, with `REPLACE_WITH_PROJECT_NAME` replaced by the project name
+  outside the verbatim prefixes. Any other `REPLACE_WITH_*` placeholder in the substituted
+  files is listed after the run. Recorded checksums are of the content as written.
 - `git init` runs and `HEAD` is pointed at `main` with `symbolic-ref`, so no minimum git
   feature version is needed beyond a working `git`. There is no remote and there are no
-  commits. The project is independent: nothing links it to this repository except the
-  manifest.
+  commits. The store is independent: nothing links it to this repository except the manifest.
 - Git identity is explicit: `--git-name`/`--git-email` or an interactive prompt. It never
   silently inherits the global identity; `--use-global-git-identity` opts in and is reported.
   An email that does not contain `noreply` produces a warning.
 - `/.debug/` is added to the new repository's `.git/info/exclude`.
-- `REPLACE_WITH_PROJECT_NAME` is replaced by the project name in `base/` files, slot
-  fragments, and `kb.json`; it is never replaced under `docs/kb/` or `tools/`, whose copies
-  are verbatim (the specifications mention the placeholder as text). Any other
-  `REPLACE_WITH_*` placeholder in the substituted files is listed after the run. Recorded
-  checksums are of the content as written.
+- `.kb-manifest` is written last.
 - `--dry-run` prints what would be written and writes nothing.
 - If a failure occurs after the first write, the installer reports the paths it wrote and
   leaves them; it never deletes anything.
+- Exit status: 0 success, 1 error, 2 usage.
 
-No `LICENSE` is created. The project's owner chooses one.
+No `LICENSE` is created. The store's owner chooses one.
 
-## Add to an existing project
+### Registration hint
 
-```sh
-./install.py --add-to ../existing-project [--dry-run]
+After a successful, non-dry-run creation the installer prints the kit's `hint` and then one
+line, with the store's absolute real path:
+
+```text
+to register with the project template, run its install.py --register <absolute store path>
 ```
 
-- The target must be an existing directory that is not, and is not inside, this repository.
-  The installer runs no git command against the target and does not set an identity or
-  commit. (It reads git state of the starter only, for the manifest.)
-- Each `files/` entry is written if absent, left alone if identical, and a conflict if
-  different; any conflict aborts the run before the first write.
-- Preflight: the run aborts, writing nothing, if the target already has a non-empty `catalog/`,
-  `domains/`, `playbook/`, `sources/`, or `text/` directory, because the layer's ignore rules
-  and layout would silently change its meaning. A directory holding only files identical to
-  the kit's (left by an earlier run that failed before the manifest) is not non-empty.
-- Each fragment is inserted at its marker if the host file has one. If the host file exists
-  without the marker, the fragment is appended in a managed block with the same `BEGIN`/`END`
-  lines. If the host file is absent, the `base/` version is written.
-- A project can receive the layer after the template (or any other tool) has created the rest
-  of the project.
-- The run writes `.kb-manifest` last. A second run is therefore refused: it exits with the
-  distinct status "already installed", writes nothing, and points at `--upgrade`. A run that
-  failed before the manifest was written can be repeated, because identical files are left
-  alone.
+The template's location is left to the reader, because the generator does not know where it
+is. The installer runs nothing, writes no registry, and has no flag for this.
+
+- The template registers a store under its directory name and refuses a name that does not
+  match `[a-z0-9][a-z0-9_-]*`. Project names here are wider (capitals, spaces, dots), so when
+  the target directory's name does not match that pattern, the line ends with
+  ` --name <suggestion>`. The suggestion is the directory name lowercased, with each run of
+  characters outside `[a-z0-9_-]` replaced by one hyphen and leading characters outside
+  `[a-z0-9]` removed; if nothing is left it is `kb`. It is a suggestion only; the owner may
+  choose another valid name.
+- The path is shell-quoted when it contains characters a shell would split or expand. It is
+  printable single-line text, as every command-line value must be.
 
 ## Manifest
 
@@ -210,34 +228,32 @@ No `LICENSE` is created. The project's owner chooses one.
   "kit_version": "1",
   "starter_commit": "",
   "starter_dirty": false,
-  "files": { "kb.json": "<sha256>", "tools/check_kb.py": "<sha256>" },
-  "blocks": { "AGENTS.md#agents-guidance": "<sha256 of the inserted block>" }
+  "files": { "kb.json": "<sha256>", "tools/check_kb.py": "<sha256>" }
 }
 ```
 
-- `schema` is the manifest's own version. `kb_schema` is the format version the project
+- `schema` is the manifest's own version. `kb_schema` is the format version the store
   currently conforms to; it always equals `kb.json`'s `schema`, and the check reports a
-  difference.
-- `files` lists only **starter-owned** files: `kb.json`, `tools/`, `docs/kb/`, and
-  `domains/_skeleton/`. `blocks` lists each inserted block by `path#slot`.
+  difference. Schema 1 has no `blocks` key.
+- `files` lists only **starter-owned** files: `kb.json`, `tools/`, `docs/kb/`,
+  `domains/_skeleton/`, and `template-module/`.
 - Content is never listed: `domains/<name>/`, `catalog/`, `sources/`, `text/`, `playbook/`, and
-  any text outside the managed blocks in `AGENTS.md`, `README.md`, `docs/README.md`, and
-  `.gitignore`.
-- The manifest is tracked in the project's repository.
+  the four root files.
+- The manifest is tracked in the store's repository.
 - `starter_commit` and `starter_dirty` come from running `git` in the starter checkout; they
   are empty and false when the starter is not a git checkout.
 
-## Upgrade a project
+## Upgrade a store
 
 ```sh
 ./install.py --upgrade --dir ../my-kb [--dry-run]
 ```
 
-Run from the starter checkout against a project. The **owned set** is derived from the kit,
-never from the manifest: the kit's `files/` paths under the starter-owned prefixes, plus the
-kit's slot blocks. A manifest key outside the starter-owned prefixes (or not a valid block
-key) is ignored and reported, so a crafted manifest cannot make the upgrade replace project
-content. For each owned file and block, and for each recorded one no longer in the kit:
+Run from the starter checkout against a store. The **owned set** is derived from the kit,
+never from the manifest: the kit's `files/` paths under the starter-owned prefixes. A manifest
+key outside the starter-owned prefixes is ignored and reported, so a crafted manifest cannot
+make the upgrade replace store content. For each owned file, and for each recorded one no
+longer in the kit:
 
 | On-disk state | Action |
 |---|---|
@@ -246,52 +262,54 @@ content. For each owned file and block, and for each recorded one no longer in t
 | Recorded; differs from the record (edited by the owner) | Skip and report; keep the owner's version. If it equals the kit, record it |
 | Not recorded; exists; equals the kit | Adopt: record the checksum |
 | Not recorded; exists; differs from the kit | Conflict: skip and report |
-| Missing; the kit has it | Add it (a block is re-inserted at its marker, or appended if the marker is gone) |
+| Missing; the kit has it | Add it |
 | Recorded; no longer in the kit | Report; never delete |
 
-- Content paths and text outside managed blocks are never read for modification or written.
-- Checksums are compared after the same name substitution used at install, using the
-  manifest's `name`, which is first validated against the name rule; an invalid name refuses
-  the upgrade.
-- If the project's `kb_schema` is lower than the kit's, `kit/migrations.json` must hold a
-  contiguous chain of steps from the project's schema to the kit's; otherwise the upgrade
+- Content paths and the four root files are never read for modification or written.
+- Checksums are compared after the same name substitution used at creation (outside the
+  verbatim prefixes), using the manifest's `name`, which is first validated against the name
+  rule; an invalid name refuses the upgrade.
+- If the store's `kb_schema` is lower than the kit's, `kit/migrations.json` must hold a
+  contiguous chain of steps from the store's schema to the kit's; otherwise the upgrade
   refuses before writing anything and points at `docs/kb/` for the manual route. If the
-  project's schema is higher than the kit's, it refuses. Steps and their ops are defined
-  under `migrations.json` above; at schema 1 there are none. After the chain has been applied
-  the ordinary table above runs against the new kit.
+  store's schema is higher than the kit's, it refuses. After the chain has been applied the
+  ordinary table above runs against the new kit.
 - Staging: all results, including migration output, are computed and validated before the
   first rename. `kb.json` is renamed second to last and the manifest last. A crash during the
   rename phase leaves some files replaced; rerunning completes the work because each step is
   idempotent and the remaining work is detected from `kb.json`'s schema and the checksums.
-- Upgrade runs no git command against the project, because an untrusted project's `.git` can
+- Upgrade runs no git command against the store, because an untrusted store's `.git` can
   configure helpers. It never commits. It prints a summary and a reminder to review the
-  changes with `git diff` and `git status`, and leaves them in the working tree.
+  changes with `git diff` and `git status`, and leaves them in the working tree. A change to
+  `template-module/` does not reach projects that already installed the store. The template
+  records a digest of the descriptor when it installs a store, so a future template refresh
+  feature could detect the change; nothing checks it today.
 
 ## Trust model
 
-These are this specification's own requirements. They are modelled on the project
-template's installer, but nothing here depends on that repository. Candidate 1 records them
-in ADR 0002 in this repository; this section holds the detailed requirements.
+These are this specification's own requirements, recorded in ADR 0002 and narrowed by ADR 0003.
+They are modelled on the project template's installer, but nothing here depends on that
+repository.
 
 - Trusted: the starter checkout run from the owner's clone, and the owner's command line as
   intent.
-- Untrusted data: every command-line value; everything in a project under `--add-to` or
-  `--upgrade` (files, symlinks, special files, the manifest); the caller's environment and git
-  configuration, as far as `git` is concerned.
+- Untrusted data: every command-line value; everything in a store under `--upgrade` (files,
+  symlinks, special files, the manifest); the caller's environment and git configuration, as
+  far as `git` is concerned.
 - Out of scope: the owner deliberately installing a malicious starter or fork, and what a
-  generated project's own tools do later.
-- Writes happen only inside the target or project directory and, for a new project,
-  `<target>/.git/info/exclude`.
+  store's own tools do later.
+- Writes happen only inside the target or store directory and, for a new store,
+  `<target>/.git/info/exclude`. The installer writes nothing in the template, a registry, or any
+  other project.
 
 Hardening requirements:
 
 - Files are read only as regular files, opened with `O_NOFOLLOW` and `O_NONBLOCK`, after an
   `lstat`, capped at 16 MiB, so a symlink or FIFO cannot redirect or hang a read.
-- Symlinks and special files inside a project, a symlinked target directory (the final path
-  component), and a symlinked kit tree entry (`files/`, `slots/`, `base/`, the module
-  directory, `module.json`, `migrations.json`) are refused. Ancestors above the target are
-  resolved with `realpath` for identity checks only and may be symlinks (for example `/tmp` on
-  macOS).
+- Symlinks and special files inside a store under `--upgrade`, a symlinked target directory
+  (the final path component), and a symlinked kit tree entry (`files/`, the kit directory,
+  `kit.json`, `migrations.json`) are refused. Ancestors above the target are resolved with
+  `realpath` for identity checks only and may be symlinks (for example `/tmp` on macOS).
 - A target equal to, or inside, the starter is refused by comparing resolved real paths by
   identity, not by string.
 - Writes go through a temporary sibling and a rename, manifest last. A path with a symlinked
@@ -299,21 +317,17 @@ Hardening requirements:
 - Path components are compared case-insensitively against `.git` and the manifest name, and
   any `.git` component is refused (macOS and Windows resolve `.Git` to `.git`). The manifest
   name is reserved and may not appear in the kit.
-- `--skip-unsafe-entries` (for `--add-to` and `--upgrade` only; rejected when creating)
-  skips and lists symlinks, special files, and files over the size cap in the project walk. A
-  skipped entry is never read, patched, or written through. A marker that exists only in a
-  skipped file fails the run.
 - `git` runs only in the starter checkout (for the manifest) and in the new directory when
   creating. It runs with `GIT_*` variables dropped except the three config selectors, with
   `core.fsmonitor`, `core.untrackedCache`, and `core.hooksPath` neutralized, and
-  `git init --template=` so no sample hook is copied. It never runs in a project given to
-  `--add-to` or `--upgrade`.
+  `git init --template=` so no sample hook is copied. It never runs in a store given to
+  `--upgrade`.
 - The manifest is validated: an object, known `schema`, bounded size, relative paths with no
   `..` or `.git` component, checksums of exactly 64 lowercase hex digits, and a `name` that
   satisfies the name rule.
 - Names and every command-line value must be printable single-line text.
 
-Accepted residuals (also recorded in ADR 0002):
+Accepted residuals (recorded in ADR 0002):
 
 - A concurrent local attacker can swap a parent directory for a symlink between the
   pre-write check and the rename; closing it needs directory-descriptor-relative operations.
@@ -327,65 +341,82 @@ Accepted residuals (also recorded in ADR 0002):
 
 ## Acceptance criteria
 
-1. `[C2]` Creating a project into a scratch directory writes exactly the base files, the kit's
-   files with slots applied, and `.kb-manifest`; substitutes the project name; initializes
+1. `[C2]` Creating a store into a scratch directory writes exactly the kit's files and
+   `.kb-manifest`; substitutes the project name outside the verbatim prefixes; initializes
    `main` with no remote and no commits; sets the local identity; and adds `/.debug/` to the
    exclude file.
-2. `[C2]` The created project passes `tools/check_kb.py` with no domain.
+2. `[C2]` The created store passes `tools/check_kb.py` with no domain.
 3. `[C2]` Creation refuses, writing nothing: a non-empty or existing non-directory target, a
    target equal to or inside the starter, a symlinked target directory, a read-only target,
    missing identity in a non-interactive run, and a name that breaks the name rule. A target
    under a symlinked ancestor (for example a temporary directory) succeeds.
-4. `[C2]` `--dry-run` writes nothing and lists every path it would write, for all modes.
-5. `[C2]` `--add-to` on a fixture project with the template's markers inserts each fragment at
-   its marker; on a fixture without markers it appends managed blocks; where a host file is
-   absent it writes the `base/` version. Existing differing files abort the run with nothing
-   written, text outside the blocks is unchanged, and a non-empty `catalog/`, `domains/`,
-   `playbook/`, `sources/`, or `text/` aborts it.
-6. `[C2]` Block parsing refuses, writing nothing: a marker inside a fenced block, duplicate
-   markers or blocks, a `BEGIN` without `END`, nested or interleaved pairs, a non-UTF-8 host
-   file, and a host file containing a NUL byte.
-7. `[C2]` `--add-to` runs no git command against the target (a fixture `.git` with a configured
-   helper is never run). A second run exits with the "already installed" status and writes
-   nothing; a run repeated after a simulated failure before the manifest completes. A target
-   inside the starter is refused. The kit is validated before any write: a `module.json` with
-   a missing key, a wrong type, or a non-empty `requires`, and a `migrations.json` with a gap,
-   a non-contiguous chain, an unknown op, or a path outside the owned prefixes, each refuses
-   the run. Substitution leaves `docs/kb/` and `tools/` byte-identical to the kit.
-8. `[C2]` Hardening: a FIFO or symlink in a fixture project does not hang or redirect a read; a
-   `.GIT` path component is refused; a symlink in the kit is refused; `--skip-unsafe-entries`
-   is rejected when creating and fails when a needed marker lives in a skipped file; a hostile
-   project (a `.git` with configured helpers, `GIT_*` in the environment) causes no program to
-   run.
-9. `[C2]` The starter has no tracked content under `domains/`, `catalog/`, `sources/`, or
-   `text/`, and a search of tracked files finds no personal path or address.
-10. `[C2]` A created project's `README.md` contains the copyright and licensing note, and each
+4. `[C2]` `--dry-run` writes nothing and lists every path it would write.
+5. `[C2a]` `--add-to` and `--skip-unsafe-entries` are unknown options and exit 2. The kit has no
+   `slots/` or `base/`; the only `module.json` is `template-module/module.json`; no file in
+   `kit/` outside `kit/files/docs/kb/`, and no line of `install.py`, contains `@module-slot`;
+   and exit status 3 no longer exists.
+6. `[C2a]` The created store contains `template-module/module.json` and
+   `template-module/slots/agents-guidance.md`, byte-identical to the kit (not substituted). A
+   test checks them against the descriptor rules above: exact keys and types (`module_format`
+   and `description` only), description length and single-line text, slot name, size, UTF-8
+   and no NUL, no line with
+   `@module-slot:`, `BEGIN module:`, or `END module:`, and no `REPLACE_WITH_*` token other than
+   `REPLACE_WITH_MODULE_NAME` and `REPLACE_WITH_MODULE_PATH`. The fragment names the store's
+   router and the `[U]` and data-not-instructions guidance.
+7. `[C2a]` After a successful creation the installer prints the kit's hint and exactly one
+   registration line with the store's absolute real path, shell-quoted when needed. When the
+   target directory's name does not match `[a-z0-9][a-z0-9_-]*` (for example `My KB`,
+   `my.kb`, or a name made only of symbols) the line ends with `--name` and the
+   suggestion described above; otherwise it has no suffix. The line is absent with `--dry-run`
+   and after a failed run. The installer runs no program for it, writes nothing outside the
+   target, and accepts no registration flag.
+8. `[C2a]` The root `README.md`, `AGENTS.md`, `docs/README.md`, and `.gitignore` are written
+   once, contain the knowledge-base guidance, the copyright note, the docs index, and the
+   `sources/` and `text/` ignore rules, and contain no marker or `BEGIN`/`END` line. The
+   manifest lists no blocks.
+9. `[C2]` The kit is validated before any write: a `kit.json` with a missing key or a wrong
+   type, and a `migrations.json` with a gap, a non-contiguous chain, an unknown op, or a path
+   outside the owned prefixes, each refuses the run. Substitution leaves `docs/kb/`, `tools/`,
+   and `template-module/` byte-identical to the kit.
+10. `[C2]` Hardening: a symlink or special file in the kit is refused; a `.GIT` path component is
+    refused; a hostile environment (`GIT_*` variables, a global git configuration naming hooks
+    or helpers) causes no program to run.
+11. `[C2]` The starter has no tracked content under `domains/`, `catalog/`, `sources/`, or
+    `text/`, and a search of tracked files finds no personal path or address.
+12. `[C2]` A created store's `README.md` contains the copyright and licensing note, and each
     `kit/files/docs/kb/` copy equals its source specification as described above.
-11. `[C5]` Upgrade follows the table above: edited files and blocks skipped and reported, unedited
-    ones replaced, new ones added, adopted and conflicting unrecorded files handled as listed,
-    none deleted. A checksum of `domains/<name>/`, `catalog/`, `sources/`, `text/`, `playbook/`,
-    and the text outside managed blocks is identical before and after.
-12. `[C5]` Upgrade is idempotent: a second run reports nothing to do. Replacing `kb.json` is
-    allowed and is the only change to a project-root marker.
-13. `[C5]` Upgrade ignores and reports a manifest key outside the starter-owned prefixes (for
+13. `[C5]` Upgrade follows the table above: edited files skipped and reported, unedited ones
+    replaced, new ones added, adopted and conflicting unrecorded files handled as listed, none
+    deleted. A checksum of `domains/<name>/`, `catalog/`, `sources/`, `text/`, `playbook/`, and
+    the four root files is identical before and after.
+14. `[C5]` Upgrade is idempotent: a second run reports nothing to do. Replacing `kb.json` is
+    allowed and is the only change to a store-root marker.
+15. `[C5]` Upgrade ignores and reports a manifest key outside the starter-owned prefixes (for
     example `playbook/README.md`), and refuses a malformed manifest, a path that escapes the
-    project or names `.git`, a bad checksum, an invalid `name`, and a symlinked project
-    directory.
-14. `[C5]` Upgrade refuses before any write when the project's `kb_schema` is lower than the kit's
+    store or names `.git`, a bad checksum, an invalid `name`, and a symlinked store
+    directory. It adds a missing `template-module/` file.
+16. `[C5]` Upgrade refuses before any write when the store's `kb_schema` is lower than the kit's
     and `migrations.json` has no contiguous chain, or is higher than the kit's. A fixture chain
     of two steps using `add`, `replace`, and `remove` is applied whole, with `kb.json` and the
     manifest renamed last, and the manifest ends with the written checksums and without the
     removed key. An edited file named by `add`, `replace`, or `remove` makes the run refuse
     before any write, lists the path, and leaves `kb_schema` unchanged; `remove` deletes
     nothing else.
-15. `[C5]` Upgrade runs no git command against the project (a fixture `.git` with a configured
+17. `[C5]` Upgrade runs no git command against the store (a fixture `.git` with a configured
     helper is never run) and prints the review reminder.
-16. `[C5]` After an interrupted upgrade (a simulated failure between renames, including
+18. `[C5]` After an interrupted upgrade (a simulated failure between renames, including
     immediately after a migration `replace` or `remove`), rerunning completes it and leaves the
-    project equal to an uninterrupted upgrade.
+    store equal to an uninterrupted upgrade.
+19. `[C2a]` By hand, recorded in the plan's Result and not a dependency of the test suite: a
+    store created by the installer is registered with the template into a scratch registry
+    (`--register <store> --registry <scratch file>`), verified by `--list`, and installed into a
+    scratch project with `--with`, and the project's `AGENTS.md` then holds a block that points at
+    the store's router. A store whose directory name is not a valid module name is registered
+    with the suggested `--name`.
 
 ## Related
 
 - [knowledge-base-format.md](knowledge-base-format.md)
 - [domain-lifecycle.md](domain-lifecycle.md)
 - [source-pipeline.md](source-pipeline.md)
+- Template side: `claude_project_template/docs/specs/external-modules.md` and its ADR 0003

@@ -1,3 +1,5 @@
+# Project instructions
+
 ## Knowledge base
 
 This project is a knowledge base: domains of claim-tagged playbook entries backed by a

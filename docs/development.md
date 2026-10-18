@@ -16,7 +16,7 @@ ambiguous blank.
 | Purpose | Command |
 |---|---|
 | Setup | not applicable (Python 3.9+ and git; standard library only) |
-| Run locally | `python3 -I install.py <target> --git-name "N" --git-email "id+user@users.noreply.github.com"`; add `--dry-run` to preview, or `--add-to <dir>` to layer onto a project |
+| Run locally | `python3 -I install.py <target> --git-name "N" --git-email "id+user@users.noreply.github.com"`; add `--dry-run` to preview. It creates a standalone store and prints how to register it with the project template |
 | One focused test | `python3 -I -m unittest discover -s tests -p 'test_kbparse.py'` (any `test_*.py` name) |
 | Full tests | `python3 -I -m unittest discover -s tests` |
 | Check a project | `python3 -I <project>/tools/check_kb.py` (`--require-sources` once sources are saved) |

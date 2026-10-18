@@ -3,11 +3,11 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import helpers
@@ -17,7 +17,8 @@ sys.path.insert(0, str(helpers.ROOT))
 import install  # noqa: E402
 
 IDENT = ["--git-name", "Test User", "--git-email", "test@users.noreply.github.com"]
-SAFE_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+SAFE_ENV = helpers.SAFE_ENV
+REGISTER = "to register with the project template, run its install.py --register "
 
 
 def run_install(*argv, kit=None):
@@ -64,15 +65,17 @@ class Criterion1ExactOutput(CreateCase):
     def test_creates_exactly_the_expected_files(self):
         code, out, err = self.create()
         self.assertEqual(code, 0, out + err)
-        expected = kit_rels() | {"README.md", "AGENTS.md", "docs/README.md", ".gitignore", ".kb-manifest"}
-        self.assertEqual(project_files(self.target), expected)
+        self.assertEqual(project_files(self.target), kit_rels() | {".kb-manifest"})
 
     def test_name_substitution_is_limited(self):
         self.create()
         self.assertTrue((self.target / "README.md").read_text().startswith("# demo-kb\n"))
-        for rel in ("docs/kb/installer.md", "tools/check_kb.py", "tools/kbparse.py"):
+        for rel in ("docs/kb/installer.md", "tools/check_kb.py", "tools/kbparse.py",
+                    "template-module/module.json", "template-module/slots/agents-guidance.md"):
             self.assertEqual((self.target / rel).read_bytes(), (helpers.KIT / "files" / rel).read_bytes(), rel)
         self.assertIn("REPLACE_WITH_PROJECT_NAME", (self.target / "docs/kb/installer.md").read_text())
+        self.assertIn("REPLACE_WITH_MODULE_PATH",
+                      (self.target / "template-module/slots/agents-guidance.md").read_text())
 
     def test_name_option(self):
         self.create("--name", "My KB")
@@ -102,32 +105,31 @@ class Criterion1ExactOutput(CreateCase):
         self.assertEqual(manifest["name"], "demo-kb")
         self.assertEqual(manifest["kit_version"], "1")
         self.assertIsInstance(manifest["starter_dirty"], bool)
-        owned = ("kb.json", "tools/", "docs/kb/", "domains/_skeleton/")
+        owned = ("kb.json", "tools/", "docs/kb/", "domains/_skeleton/", "template-module/")
         self.assertEqual(set(manifest["files"]), {r for r in kit_rels() if r.startswith(owned)})
         for rel, digest in manifest["files"].items():
             self.assertEqual(hashlib.sha256((self.target / rel).read_bytes()).hexdigest(), digest, rel)
-        self.assertEqual(set(manifest["blocks"]), {
-            "AGENTS.md#agents-guidance", "README.md#readme-docs",
-            "docs/README.md#docs-index", ".gitignore#gitignore"})
-        for key, digest in manifest["blocks"].items():
-            rel, slot = key.split("#")
-            text = (self.target / rel).read_text()
-            begin = text.index(f"BEGIN module:knowledge-base slot:{slot}")
-            end = text.index(f"END module:knowledge-base slot:{slot}")
-            block = text[text.rfind("\n", 0, begin) + 1:text.index("\n", end)]
-            self.assertEqual(hashlib.sha256(block.encode()).hexdigest(), digest, key)
+        self.assertNotIn("blocks", manifest)
+        self.assertEqual(set(manifest), {"schema", "kb_schema", "name", "kit_version",
+                                         "starter_commit", "starter_dirty", "files"})
 
-    def test_slots_are_applied_with_markers_kept(self):
+    def test_root_files_have_no_markers_or_managed_blocks(self):
         self.create()
-        for rel, slot in (("AGENTS.md", "agents-guidance"), ("README.md", "readme-docs"),
-                          ("docs/README.md", "docs-index")):
+        for rel in ("AGENTS.md", "README.md", "docs/README.md", ".gitignore"):
             text = (self.target / rel).read_text()
-            self.assertIn(f"<!-- BEGIN module:knowledge-base slot:{slot} -->", text)
-            self.assertIn(f"<!-- END module:knowledge-base slot:{slot} -->", text)
-            self.assertIn(f"<!-- @module-slot: {slot} -->", text)
-        ignore = (self.target / ".gitignore").read_text()
-        self.assertIn("# BEGIN module:knowledge-base slot:gitignore", ignore)
-        self.assertIn("/sources/*", ignore.split("\n"))
+            for needle in ("@module-slot", "BEGIN module:", "END module:"):
+                self.assertNotIn(needle, text, rel)
+        self.assertIn("/sources/*", (self.target / ".gitignore").read_text().split("\n"))
+
+    def test_a_fresh_store_reports_no_leftover_placeholders(self):
+        code, out, err = self.create()
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("placeholders left to fill", out)
+
+    def test_the_created_descriptor_satisfies_the_template_rules(self):
+        from test_kit import descriptor_problems
+        self.create()
+        self.assertEqual(descriptor_problems(self.target), [])
 
     def test_use_global_git_identity_is_explicit_and_reported(self):
         config = self.tmp / "gitconfig"
@@ -152,7 +154,7 @@ class Criterion2CheckerPasses(CreateCase):
         report = check_kb.check(self.target)
         self.assertEqual([str(f) for f in report.errors], [])
         script = self.target / "tools" / "check_kb.py"
-        result = subprocess.run([sys.executable, "-I", str(script)], capture_output=True, text=True, cwd=self.tmp)
+        result = subprocess.run([sys.executable, "-I", "-B", str(script)], capture_output=True, text=True, cwd=self.tmp)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_agents_md_has_the_four_guidance_items(self):
@@ -240,14 +242,21 @@ class Criterion3Refusals(CreateCase):
         code, out, err = run_install(str(self.target), "--git-name", "A\nB", "--git-email", "a@b.c")
         self.assertEqual(code, 1)
 
+    def test_empty_target_does_not_install_into_the_current_directory(self):
+        empty = self.tmp / "cwd"
+        empty.mkdir()
+        old = os.getcwd()
+        os.chdir(empty)
+        try:
+            code, out, err = run_install("", *IDENT)
+        finally:
+            os.chdir(old)
+        self.assertEqual(code, 1, out + err)
+        self.assertEqual(list(empty.iterdir()), [])
+
     def test_git_component_in_target(self):
         code, out, err = run_install(str(self.tmp / ".GIT" / "x"), *IDENT)
         self.assertEqual(code, 1)
-
-    def test_skip_unsafe_entries_is_rejected_when_creating(self):
-        code, out, err = self.create("--skip-unsafe-entries")
-        self.assertEqual(code, 1)
-        self.assertFalse(self.target.exists())
 
     def test_empty_existing_directory_is_accepted(self):
         self.target.mkdir()
@@ -269,9 +278,9 @@ class Criterion4DryRun(CreateCase):
         code, out, err = self.create("--dry-run")
         self.assertEqual(code, 0, out + err)
         self.assertFalse(self.target.exists())
-        expected = kit_rels() | {"README.md", "AGENTS.md", "docs/README.md", ".gitignore", ".kb-manifest"}
-        for rel in expected:
+        for rel in kit_rels() | {".kb-manifest"}:
             self.assertIn(rel, out, rel)
+        self.assertNotIn(REGISTER, out)
 
     def test_dry_run_leaves_an_existing_empty_directory_empty(self):
         self.target.mkdir()
@@ -280,7 +289,7 @@ class Criterion4DryRun(CreateCase):
         self.assertEqual(list(self.target.iterdir()), [])
 
 
-class Criterion7KitValidation(CreateCase):
+class Criterion9KitValidation(CreateCase):
     kits = 0
 
     def make_kit(self):
@@ -295,8 +304,8 @@ class Criterion7KitValidation(CreateCase):
         self.assertFalse(self.target.exists())
         return out + err
 
-    def set_module(self, kit, **changes):
-        path = kit / "module.json"
+    def set_kit_json(self, kit, **changes):
+        path = kit / "kit.json"
         data = json.loads(path.read_text())
         for key, value in changes.items():
             if value is KeyError:
@@ -309,22 +318,31 @@ class Criterion7KitValidation(CreateCase):
         code, out, err = run_install(str(self.target), *IDENT, kit=self.make_kit())
         self.assertEqual(code, 0, out + err)
 
-    def test_module_json_rules(self):
-        cases = [("name", KeyError), ("kit_version", KeyError), ("description", KeyError),
-                 ("order", KeyError), ("requires", KeyError), ("hint", KeyError),
-                 ("name", "other"), ("kit_version", 1), ("order", "5"), ("requires", ["x"]),
-                 ("hint", "two\nlines"), ("description", 5)]
+    def test_kit_json_rules(self):
+        cases = [("kit_version", KeyError), ("hint", KeyError), ("kit_version", 1),
+                 ("kit_version", ""), ("hint", "two\nlines"), ("hint", 5)]
         for key, value in cases:
             with self.subTest(key=key, value=value):
                 kit = self.make_kit()
-                self.set_module(kit, **{key: value})
+                self.set_kit_json(kit, **{key: value})
                 self.refuses_kit(kit)
 
-    def test_module_json_missing_or_not_json(self):
+    def test_unknown_kit_json_keys_are_ignored(self):
         kit = self.make_kit()
-        (kit / "module.json").write_text("{nope")
+        self.set_kit_json(kit, extra="x")
+        code, out, err = run_install(str(self.target), *IDENT, kit=kit)
+        self.assertEqual(code, 0, out + err)
+
+    def test_kit_json_missing_or_not_json(self):
+        kit = self.make_kit()
+        (kit / "kit.json").write_text("{nope")
         self.refuses_kit(kit)
-        (kit / "module.json").unlink()
+        (kit / "kit.json").unlink()
+        self.refuses_kit(kit)
+
+    def test_an_old_module_json_kit_is_refused(self):
+        kit = self.make_kit()
+        (kit / "kit.json").rename(kit / "module.json")
         self.refuses_kit(kit)
 
     def migrations(self, kit, steps):
@@ -338,6 +356,7 @@ class Criterion7KitValidation(CreateCase):
             [{"from": 1, "to": 3, "ops": []}],
             [{"from": 1, "to": 2, "ops": [{"op": "chmod", "path": "tools/x"}]}],
             [{"from": 1, "to": 2, "ops": [{**op, "path": "playbook/README.md"}]}],
+            [{"from": 1, "to": 2, "ops": [{**op, "path": "README.md"}]}],
             [{"from": 1, "to": 2, "ops": [{**op, "path": "../x"}]}],
             [{"from": 1, "to": 2, "ops": [{**op, "path": "tools/.git/x"}]}],
             [{"from": 1, "to": 2, "ops": [{**op, "source": "tools/missing.py"}]}],
@@ -353,19 +372,19 @@ class Criterion7KitValidation(CreateCase):
         kit = self.make_kit()
         self.migrations(kit, [
             {"from": 1, "to": 2, "ops": [{"op": "add", "path": "tools/new.py", "source": "tools/kbparse.py"}]},
-            {"from": 2, "to": 3, "ops": [{"op": "remove", "path": "tools/new.py"}]}])
+            {"from": 2, "to": 3, "ops": [{"op": "remove", "path": "template-module/slots/agents-guidance.md"}]}])
         code, out, err = run_install(str(self.target), *IDENT, kit=kit)
         self.assertEqual(code, 0, out + err)
 
     def test_symlink_in_kit_is_refused(self):
         kit = self.make_kit()
-        os.symlink(kit / "module.json", kit / "files" / "link.md")
+        os.symlink(kit / "kit.json", kit / "files" / "link.md")
         self.refuses_kit(kit)
 
     def test_symlinked_kit_directory_is_refused(self):
         kit = self.make_kit()
-        shutil.move(str(kit / "slots"), str(self.tmp / "elsewhere"))
-        os.symlink(self.tmp / "elsewhere", kit / "slots")
+        shutil.move(str(kit / "files"), str(self.tmp / "elsewhere"))
+        os.symlink(self.tmp / "elsewhere", kit / "files")
         self.refuses_kit(kit)
 
     def test_git_component_in_kit_is_refused_case_insensitively(self):
@@ -379,16 +398,124 @@ class Criterion7KitValidation(CreateCase):
         (kit / "files" / ".KB-MANIFEST").write_text("{}")
         self.refuses_kit(kit)
 
-    def test_unknown_slot_without_a_host_is_refused(self):
-        kit = self.make_kit()
-        (kit / "slots" / "mystery.md").write_text("x\n")
-        self.refuses_kit(kit)
-
     def test_oversize_kit_file_is_refused(self):
         kit = self.make_kit()
         with open(kit / "files" / "big.bin", "wb") as handle:
             handle.truncate(install.MAX_READ + 1)
         self.refuses_kit(kit)
+
+
+class Criterion5RemovedOptions(CreateCase):
+    def usage_error(self, *argv):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, SAFE_ENV), contextlib.redirect_stderr(err), \
+                self.assertRaises(SystemExit) as raised:
+            install.main(list(argv))
+        self.assertEqual(raised.exception.code, 2)
+        return err.getvalue()
+
+    def test_add_to_is_an_unknown_option(self):
+        existing = self.tmp / "existing"
+        existing.mkdir()
+        self.assertIn("--add-to", self.usage_error("--add-to", str(existing)))
+        self.assertEqual(list(existing.iterdir()), [])
+
+    def test_skip_unsafe_entries_is_an_unknown_option(self):
+        self.assertIn("--skip-unsafe-entries", self.usage_error(str(self.target), *IDENT, "--skip-unsafe-entries"))
+        self.assertFalse(self.target.exists())
+
+    def test_a_target_is_required(self):
+        self.usage_error()
+
+    def test_help_lists_neither_option(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+            install.main(["--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertNotIn("--add-to", out.getvalue())
+        self.assertNotIn("--skip-unsafe-entries", out.getvalue())
+
+    def test_exit_status_three_is_gone(self):
+        self.assertFalse(hasattr(install, "EXIT_ALREADY_INSTALLED"))
+
+    def test_installer_source_has_no_marker_or_layering_machinery(self):
+        text = (helpers.ROOT / "install.py").read_text(encoding="utf-8")
+        for needle in ("@module-slot", "BEGIN module", "run_add_to", "scan_markers", "apply_fragment",
+                       "walk_content", "SLOT_HOSTS", "skip_unsafe_entries"):
+            self.assertNotIn(needle, text)
+
+
+class Criterion7RegistrationHint(CreateCase):
+    def hint(self, out):
+        lines = [l for l in out.split("\n") if l.startswith(REGISTER)]
+        self.assertEqual(len(lines), 1, out)
+        return lines[0]
+
+    def test_valid_module_name_has_no_suffix(self):
+        target = self.tmp / "my_kb"
+        code, out, err = run_install(str(target), *IDENT)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.hint(out), REGISTER + shlex.quote(os.path.realpath(target)))
+        self.assertIn("see playbook/README.md", out)
+
+    def test_hint_uses_the_real_path_behind_a_symlinked_ancestor(self):
+        real = self.tmp / "real"
+        real.mkdir()
+        os.symlink(real, self.tmp / "ancestor")
+        code, out, err = run_install(str(self.tmp / "ancestor" / "kb"), *IDENT)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.hint(out), REGISTER + shlex.quote(str(real.resolve() / "kb")))
+
+    def test_directory_names_the_template_would_refuse_get_a_suggested_name(self):
+        cases = {"My KB": "my-kb", "my.kb": "my-kb", "Demo": "demo", "-x": "x", "a  b": "a-b",
+                 "###": "kb", "_lead": "lead", "A.B_C": "a-b_c"}
+        for dirname, suggestion in cases.items():
+            with self.subTest(dirname=dirname):
+                target = self.tmp / dirname
+                code, out, err = run_install(str(target), *IDENT, "--name", "kb")
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(self.hint(out),
+                                 REGISTER + shlex.quote(os.path.realpath(target)) + f" --name {suggestion}")
+
+    def test_the_suggestion_is_a_valid_template_name(self):
+        import re
+        for dirname in ("My KB", "###", "a" * 10, "x y z", "Ünï", "--", "9 lives"):
+            self.assertRegex(install.suggest_module_name(dirname), r"[a-z0-9][a-z0-9_-]*\Z")
+        self.assertIsNone(re.match(r"[a-z0-9][a-z0-9_-]*\Z", "My KB"))
+
+    def test_the_hint_is_absent_after_a_dry_run_and_after_a_refusal(self):
+        code, out, err = self.create("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertNotIn(REGISTER, out + err)
+        self.target.mkdir()
+        (self.target / "x").write_text("x")
+        code, out, err = self.create()
+        self.assertEqual(code, 1)
+        self.assertNotIn(REGISTER, out + err)
+
+    def test_the_hint_runs_nothing_and_writes_nothing_outside_the_target(self):
+        before = helpers.snapshot(self.tmp)
+        code, out, err = self.create()
+        self.assertEqual(code, 0, out + err)
+        after = helpers.snapshot(self.tmp)
+        extra = {k for k in after if k not in before and not k.startswith("demo-kb")}
+        self.assertEqual(extra, set())
+
+    def test_a_non_printable_real_path_is_refused_before_any_write(self):
+        target = self.tmp / "new\nline"
+        code, out, err = run_install(str(target), *IDENT, "--name", "kb")
+        self.assertEqual(code, 1)
+        self.assertFalse(target.exists())
+        self.assertNotIn(REGISTER, out + err)
+
+    def test_a_path_with_shell_characters_is_quoted(self):
+        target = self.tmp / "it's $HOME;x"
+        code, out, err = run_install(str(target), *IDENT, "--name", "kb")
+        self.assertEqual(code, 0, out + err)
+        line = self.hint(out)
+        words = shlex.split(line[len(REGISTER):])
+        self.assertEqual(words[0], os.path.realpath(target))
+        self.assertEqual(words[1:], ["--name", "it-s-home-x"])
 
 
 if __name__ == "__main__":

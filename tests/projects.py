@@ -1,8 +1,4 @@
-"""Build scratch knowledge-base projects for checker and installer tests.
-
-The builder copies the kit's files and applies the slot contents by hand, so checker tests
-do not depend on the installer.
-"""
+"""Build scratch knowledge-base projects for checker and installer tests."""
 import json
 import shutil
 from pathlib import Path
@@ -48,17 +44,17 @@ Nothing yet.
 
 
 def build_project(dest, with_manifest=True):
+    """Copy the kit's files and substitute the project name, so checker tests do not depend on
+    the installer."""
     dest = Path(dest)
     shutil.copytree(helpers.KIT / "files", dest, dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__"))
-    readme = (helpers.KIT / "base" / "README.md").read_text(encoding="utf-8")
-    note = (helpers.KIT / "slots" / "readme-docs.md").read_text(encoding="utf-8")
-    (dest / "README.md").write_text(
-        readme.replace("REPLACE_WITH_PROJECT_NAME", "demo").replace(
-            "<!-- @module-slot: readme-docs -->", note), encoding="utf-8")
+    readme = dest / "README.md"
+    readme.write_text(readme.read_text(encoding="utf-8").replace("REPLACE_WITH_PROJECT_NAME", "demo"),
+                      encoding="utf-8")
     if with_manifest:
         (dest / ".kb-manifest").write_text(
-            json.dumps({"schema": 1, "kb_schema": 1, "name": "demo", "files": {}, "blocks": {}}),
+            json.dumps({"schema": 1, "kb_schema": 1, "name": "demo", "files": {}}),
             encoding="utf-8")
     return dest
 
