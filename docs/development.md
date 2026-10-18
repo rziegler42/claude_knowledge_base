@@ -29,6 +29,7 @@ ambiguous blank.
 | Full tests | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests` (about 100 seconds; without the variable the PDF tests are skipped) |
 | Run the converter | `<venv>/bin/python -I <project>/tools/convert_sources.py` (`--scan`, `--check`, `--images`, `--release <stem>`; see `docs/kb/source-pipeline.md`) |
 | Check a project | `python3 -I <project>/tools/check_kb.py` (`--require-sources` once sources are saved) |
+| Lifecycle tools | `python3 -I <project>/tools/new_domain.py <name> --title T`, `new_entry.py <domain> <slug>`, `add_source.py <stem> <file.pdf> --title T`, `kb_status.py [domain] [--json]`; each takes `--root DIR`; see `docs/kb/domain-lifecycle.md` |
 | Format | not applicable |
 | Lint or static analysis | not applicable |
 | Type check | not applicable |

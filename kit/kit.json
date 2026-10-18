@@ -1,4 +1,4 @@
 {
   "kit_version": "1",
-  "hint": "see playbook/README.md and docs/kb/domain-lifecycle.md; run python3 tools/check_kb.py"
+  "hint": "see playbook/README.md and docs/kb/domain-lifecycle.md; start a domain with python3 tools/new_domain.py <name> --title <title>; check with python3 tools/check_kb.py"
 }

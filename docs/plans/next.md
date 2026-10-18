@@ -1,6 +1,6 @@
 # Domain lifecycle tools
 
-Status: Approved (2026-10-18, by the owner; implementation authorized in the same request)
+Status: In Progress (approved 2026-10-18 by the owner; implementation started 2026-10-18 on the owner's request)
 Created: 2026-10-18
 
 ## Goal
@@ -262,5 +262,54 @@ title, `Domain lifecycle tools`.)
 
 ## Result
 
-<!-- Complete this only after verification. Archive the plan according to
-README.md, then reset this file to the empty template. -->
+Implemented 2026-10-18, uncommitted at the time of writing. Verification run:
+
+- `KB_PDF_PYTHON=<external interpreter> python3 -I -B -m unittest discover -s tests`: 660 tests pass, none
+  skipped (about 130 seconds). Without the variable the same command passes with 128 PDF tests reported as
+  skipped. The count was 422 before this plan. `git diff --check` is clean and no `__pycache__` is left.
+  The one pyflakes note, an unused import in `tests/test_kbparse.py`, predates this plan.
+- Criteria: 1 in `tests/test_new_domain.py`; 2 in `tests/test_new_entry.py`; 3 in `tests/test_add_source.py`;
+  4 in `tests/test_kblife.py` (the readers) and `tests/test_check_lifecycle.py` (the checks); 5 in
+  `tests/test_kb_status.py`; 6 in the clone cases of those files; 7 (`AGENTS.md` guidance) is unchanged and its
+  test still passes. `tests/test_lifecycle_flow.py` runs the tools together: a store goes from empty to a
+  domain that passes `check_kb.py --require-sources` using only the tools and the hand-written parts the
+  specification assigns to a person.
+- Real-store check, repeated on the final code: a store made by the installer, then `new_domain.py`,
+  `add_source.py` (a PDF), the converter, a person's charter and question edits, `new_entry.py`, and the
+  entry filled in. `check_kb.py --require-sources` reported 0 errors and 0 warnings, and two `kb_status.py
+  --json` runs were identical and changed no file. The first run of this check found that `new_entry.py`
+  correctly refuses a draft charter (as specified), and that empty lists printed blank in the text status
+  report (fixed with a test); a fill-in script of mine truncated a file, which was my script's bug, not a tool's.
+- Interruption protocol, tested by failing each tool between its writes: `new_domain.py` (a hidden temporary
+  directory is ignored; after the rename a failed root-router write prints the row, the checker names the
+  missing row, and a rerun prints the row again from the domain's own title), `new_entry.py` (the same, for the
+  router row), `add_source.py` (a rerun with the same file finishes the record; a failed copy leaves nothing).
+  The checker now also warns about a file in `sources/` with no catalog record.
+- Security review: two rounds of an independent `security-reviewer` with scratch experiments. Round 1 found no
+  Critical or High issue and reproduced three Medium and four Low findings, plus one disagreement with the
+  plan, all fixed: `kb_status.py` crashed on wrong-typed catalog or entry values and followed symlinked
+  intermediate directories (`domains/<d>/playbook`, `index`) and printed source-derived text unscrubbed;
+  `add_source.py` recorded a hash that could differ from the copied bytes and did not check the header on the
+  copied bytes; `--replace` with an unchanged hash did not verify the saved file; `new_entry.py` accepted a
+  charter the checker rejects; `new_domain.py` showed a traceback for a non-UTF-8 skeleton file; and the
+  rerun after an interrupted run did not print the missing row as the plan promised. `kbfiles.sha256_file`
+  (read-only note) could block on a FIFO and now refuses it. Round 2 re-verified the fixes by experiment and
+  found one more Low (a same-hash repair could leave the saved file different from the record if the source
+  changed mid-copy), fixed by checking the expected digest before the rename.
+- How the regression tests were observed: they were written before the fixes, and the FIFO case was seen to
+  hang the first run, which was then stopped; the other new tests were not individually observed to fail
+  before their fix because that run was interrupted. They all pass now.
+
+Interpretations made here: an `index/sources.md` table has exactly two columns; a set charter is judged only
+by its six headings and the absence of `REPLACE_WITH_` text (not by non-empty sections); `kb_status.py`
+counts conflicts, stale entries, and entries needing re-verification only for entries that are not
+superseded; an entry needs re-verification when its `updated` date is earlier than the `replaced` date of a
+source it cites; a usage-test failure is resolved by a later passing test on the same scenario text; the
+text status report scrubs control characters and JSON escapes them.
+
+Not done and not a gap in this plan: no real kill of a process was tried (interruptions were simulated by
+failing the writes), a directory swapped between the symlink walk and the read is the accepted
+concurrent-local-attacker residual of ADR 0002, and `add_source.py` supports PDF files only.
+
+Unresolved: none open. Next: owner review, commit, and archive (`ask-codex archive` for this plan, now that
+the review helper keys a plan by its title and date).

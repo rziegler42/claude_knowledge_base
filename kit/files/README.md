@@ -4,6 +4,8 @@
 
 Start at [playbook/README.md](playbook/README.md). The format and procedures are in
 [docs/kb/](docs/kb/). Run `python3 tools/check_kb.py` to validate the project.
+To start a domain run `python3 tools/new_domain.py <name> --title "Title"`; `new_entry.py`, `add_source.py`, and
+`kb_status.py` do the other mechanical parts (see [docs/kb/domain-lifecycle.md](docs/kb/domain-lifecycle.md)).
 To scan and convert saved PDFs, run `tools/convert_sources.py` with an interpreter that has
 `pymupdf` and `pymupdf4llm` (see [docs/kb/source-pipeline.md](docs/kb/source-pipeline.md)).
 

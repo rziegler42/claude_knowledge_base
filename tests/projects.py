@@ -79,7 +79,14 @@ def add_catalog(proj, stem, **overrides):
     helpers.write(proj, f"catalog/{stem}.md", front_matter(ordered) + "\nNote.\n")
 
 
-def add_domain(proj, name, title="Demo", charter="draft", router_rows=(), root_row=True):
+QUESTIONS = (
+    "| q-1 | Which option should I use when the first condition holds? | open | | |\n"
+    "| q-2 | Which option should I use when the second condition holds? | open | | |\n"
+    "| q-3 | Which option should I use when the third condition holds? | open | | |\n"
+)
+
+
+def add_domain(proj, name, title="Demo", charter="set", router_rows=(), root_row=True, questions=QUESTIONS):
     proj = Path(proj)
     d = proj / "domains" / name
     shutil.copytree(proj / "domains" / "_skeleton", d)
@@ -90,6 +97,8 @@ def add_domain(proj, name, title="Demo", charter="draft", router_rows=(), root_r
     for token in ("PURPOSE", "SCOPE", "NON_GOALS", "SOURCE_TYPES", "BAR", "NOTES"):
         text = text.replace(f"REPLACE_WITH_{token}", "filled in")
     charter_path.write_text(text, encoding="utf-8")
+    table = d / "questions.md"
+    table.write_text(table.read_text(encoding="utf-8") + questions, encoding="utf-8")
     router = d / "playbook" / "README.md"
     body = router.read_text(encoding="utf-8").replace("REPLACE_WITH_TITLE", title)
     router.write_text(body + "".join(router_rows), encoding="utf-8")
@@ -128,3 +137,24 @@ def good_project(dest):
     add_domain(proj, "demo")
     add_entry(proj, "demo", "pb-one")
     return proj
+
+
+def write_log(proj, domain, *blocks):
+    path = Path(proj) / "domains" / domain / "log.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\n" + "\n".join(blocks), encoding="utf-8")
+
+
+def add_index_source(proj, domain, stem, why="Because."):
+    path = Path(proj) / "domains" / domain / "index" / "sources.md"
+    path.write_text(path.read_text(encoding="utf-8") + f"| {stem} | {why} |\n", encoding="utf-8")
+
+
+def add_reading_note(proj, domain, stem, findings="- p. 3: the result holds.\n", by="A. Person"):
+    text = (f'---\nsource: {stem}\nread: 2026-01-05\nby: "{by}"\n---\n\n# Notes on {stem}\n\n'
+            f"## Findings\n\n{findings}")
+    helpers.write(Path(proj) / "domains" / domain / "topics", f"{stem}.md", text)
+
+
+def add_usage_test(proj, domain, slug="2026-02-01-a-scenario", result="pass"):
+    text = f'---\ndate: 2026-02-01\nscenario: "A scenario"\nresult: {result}\n---\n\n## Purpose and method\n\nText.\n'
+    helpers.write(Path(proj) / "domains" / domain / "usage-tests", f"{slug}.md", text)

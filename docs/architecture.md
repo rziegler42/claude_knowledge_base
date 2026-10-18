@@ -7,8 +7,8 @@ independently tracked knowledge-base store: a fresh git repository holding the t
 specifications, and an empty skeleton, to which the owner adds domains of their own. It carries
 no subject matter. A store needs nothing from this repository once it exists.
 
-Not built yet: upgrading a store and the domain-lifecycle tools (`add_source.py`, `new_domain.py`,
-`new_entry.py`, `kb_status.py`). The roadmap orders them (`docs/roadmaps/knowledge-base-starter.md`).
+Not built yet: upgrading a store. The roadmap orders the remaining work
+(`docs/roadmaps/knowledge-base-starter.md`).
 
 ## Components and responsibilities
 
@@ -19,8 +19,11 @@ Not built yet: upgrading a store and the domain-lifecycle tools (`add_source.py`
 - `kit/files/tools/` holds the store's own tools: `kbparse.py` (the strict front-matter and claim-tag
   parser), `check_kb.py` (the validator), and the source pipeline: `convert_sources.py` (the command),
   `convert_worker.py` (opens one PDF), `kbscan.py` (the scan rules that need no PDF library), and
-  `scan_phrases.txt` (the phrase list). `kit/files/docs/kb/` holds copies of the four specifications,
-  guarded by a drift test.
+  `scan_phrases.txt` (the phrase list). The lifecycle tools are `new_domain.py`, `new_entry.py` (with
+  `templates/entry.md`), `add_source.py`, and `kb_status.py`; `kblife.py` reads the lifecycle artifacts
+  (question table, log, charter, reading notes, usage tests) for the checker, the status report, and the
+  tools, and `kbfiles.py` holds the safe reads and atomic writes they and the converter share.
+  `kit/files/docs/kb/` holds copies of the four specifications, guarded by a drift test.
 - `kit/files/template-module/` is the descriptor that lets `claude_project_template` register a store
   and insert guidance into other projects.
 - `tests/` is a `unittest` suite that creates stores in scratch directories.
@@ -52,6 +55,16 @@ original to `sources/quarantine/` and leaves a stub, and updates the catalog fie
 `scan`, `released`). The source is never modified and nothing is deleted. The worker makes no network
 connection. Requirements: `docs/specs/source-pipeline.md`.
 
+### The lifecycle tools
+
+The writing tools validate every name, stem, and title before it reaches a path, refuse symlinks and special
+files, write through a temporary sibling and a rename, never delete, and print what they changed. A change
+that spans files is ordered so an interruption leaves a state the checker names: `new_domain.py` builds the
+domain in a hidden temporary directory, renames it into place, and then adds the root-router row;
+`new_entry.py` writes the entry and then the router row; `add_source.py` copies the file and then writes the
+record, and a rerun with the same file finishes it. The first two print the one row to add if the last write
+fails. `kb_status.py` and `check_kb.py` only read.
+
 ## External interfaces
 
 - Command line: `install.py <target>` with `--name`, `--git-name`, `--git-email`,
@@ -62,7 +75,9 @@ connection. Requirements: `docs/specs/source-pipeline.md`.
 - The registration line, which tells the owner how to register the store with the template, with a
   suggested `--name` when the directory name is not a valid template module name.
 - Inside a store, `python3 tools/check_kb.py` validates the layout, front matter, catalog, and claims,
-  and `<interpreter> tools/convert_sources.py` scans and converts sources (`--scan`, `--check`,
+  `python3 tools/kb_status.py` reports what each domain has and lacks, `new_domain.py`, `new_entry.py`, and
+  `add_source.py` do the mechanical parts of adding content, and `<interpreter> tools/convert_sources.py`
+  scans and converts sources (`--scan`, `--check`,
   `--images`, `--snippets`, `--release <stem>`, and limit flags).
 
 ## Constraints and tradeoffs

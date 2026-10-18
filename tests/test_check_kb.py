@@ -129,7 +129,7 @@ class Criterion2FrontMatter(CheckCase):
         self.assertFails("tab", "src-one.md")
 
     def test_charter_front_matter_error(self):
-        edit(self.proj / "domains" / "demo" / "README.md", "charter: draft", "charter: draft\ncharter: set")
+        edit(self.proj / "domains" / "demo" / "README.md", "charter: set", "charter: set\ncharter: set")
         self.assertFails("duplicate key", "README.md")
 
     def test_usage_test_front_matter_error(self):
@@ -283,6 +283,7 @@ class Criterion8Status(CheckCase):
         edit(self.entry_path(), "status: draft", "status: reviewed")
         log = self.proj / "domains" / "demo" / "log.md"
         log.write_text(log.read_text(encoding="utf-8") +
+                       "\n## 2026-01-01 wave 1 opened\n\nGoal: g\nTargets: q-1\nLimit: 5\n"
                        "\n## 2026-01-02 wave 1 closed\n\nAdded: pb-one\nLeft open: none\nReviewed: pb-one (A. Person)\n",
                        encoding="utf-8")
         self.assertEqual(errors(self.proj), [])

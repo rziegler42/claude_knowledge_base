@@ -19,6 +19,7 @@ from collections import namedtuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kbparse  # noqa: E402
+import kblife  # noqa: E402
 
 MAX_READ = 16 * 1024 * 1024
 MAX_MANIFEST = 1024 * 1024
@@ -78,6 +79,8 @@ class Checker:
         self.source_files = {}
         self.reviewed = {}
         self.refused = set()
+        self.charters = {}
+        self.listed = {}
 
     # ---- filesystem ---------------------------------------------------------------
 
@@ -176,6 +179,9 @@ class Checker:
         for domain in self.domains:
             self.check_domain(domain)
         self.check_entries()
+        for domain in self.domains:
+            self.check_lifecycle(domain)
+        self.check_read_sources()
         for domain in self.domains:
             self.check_domain_router(domain)
         self.check_root_router()
@@ -342,6 +348,9 @@ class Checker:
             self.report.warn(rel, "confirmed: full but the state is recorded (no saved file)")
 
     def check_source_files(self):
+        for stem, rels in sorted(self.source_files.items()):
+            if stem not in self.catalog:
+                self.report.warn(rels[0], "has no catalog record")
         for stem, f in sorted(self.catalog.items()):
             state, scan, sha = f.get("state"), f.get("scan"), f.get("sha256")
             if state not in FILE_STATES or f.get("kind") != "document":
@@ -401,17 +410,9 @@ class Checker:
         base = f"domains/{domain}"
         charter = f"{base}/README.md"
         if self.is_file(charter) or self._lstat(charter):
-            text = self.read(charter)
-            if text is not None:
-                self.front_matter(charter, text)
+            self.charters[domain] = self.read(charter)  # judged with the other lifecycle files
         else:
             self.report.error(charter, None, "charter README.md is missing")
-        for name in self.listdir(f"{base}/usage-tests"):
-            if name.endswith(".md"):
-                rel = f"{base}/usage-tests/{name}"
-                text = self.read(rel)
-                if text is not None:
-                    self.front_matter(rel, text)
         for name in self.listdir(f"{base}/index"):
             if name.endswith(".md"):
                 rel = f"{base}/index/{name}"
@@ -424,6 +425,84 @@ class Checker:
                 rel = f"{base}/playbook/entries/{name}"
                 self.entries[rel] = {"domain": domain, "stem": name[:-3]}
                 self.entry_stems.setdefault(name[:-3], []).append(rel)
+
+    # ---- lifecycle ---------------------------------------------------------------------
+
+    def report_issues(self, rel, issues):
+        for issue in issues:
+            self.report.error(rel, issue.line, issue.message)
+
+    def check_lifecycle(self, domain):
+        base = f"domains/{domain}"
+        charter_rel = f"{base}/README.md"
+        entry_ids = {info["stem"] for info in self.entries.values() if info["domain"] == domain}
+        state = None
+        text = self.charters.get(domain)
+        if text is not None:
+            result = kblife.charter_issues(text)
+            self.report_issues(charter_rel, result.issues)
+            state = result.state
+            if state == "draft" and entry_ids:
+                self.report.error(charter_rel, None, "a domain with entries cannot have charter: draft")
+        questions_rel = f"{base}/questions.md"
+        if not self._lstat(questions_rel):
+            self.report.error(questions_rel, None, "questions.md is missing")
+        else:
+            text = self.read(questions_rel)
+            if text is not None:
+                parsed = kblife.parse_questions(text)
+                self.report_issues(questions_rel, parsed.issues)
+                self.report_issues(questions_rel, kblife.question_entry_issues(parsed.rows, entry_ids))
+                if state == "set" and len(parsed.rows) < 3:
+                    self.report.error(questions_rel, None, "a set domain needs at least three questions")
+        log_rel = f"{base}/log.md"
+        if not self._lstat(log_rel):
+            self.report.error(log_rel, None, "log.md is missing")
+        else:
+            text = self.read(log_rel)
+            if text is not None:
+                self.report_issues(log_rel, kblife.parse_log(text).issues)
+        for name in self.listdir(f"{base}/usage-tests"):
+            if name.endswith(".md"):
+                rel = f"{base}/usage-tests/{name}"
+                text = self.read(rel)
+                if text is not None:
+                    self.report_issues(rel, kblife.usage_test_issues(text).issues)
+        index_rel = f"{base}/index/sources.md"
+        if self._lstat(index_rel):
+            text = self.read(index_rel)
+            if text is not None:
+                stems, issues = kblife.index_stems(text)
+                self.report_issues(index_rel, issues)
+                for stem, line in stems:
+                    self.listed.setdefault(stem, []).append(domain)
+                    if stem not in self.catalog:
+                        self.report.error(index_rel, line, f"lists {stem}, which has no catalog record")
+
+    def check_read_sources(self):
+        """A source in state read needs a valid reading note in a domain that lists it."""
+        for stem in sorted(self.catalog):
+            if self.catalog[stem].get("state") != "read":
+                continue
+            found, problems = False, []
+            for domain in self.listed.get(stem, []):
+                rel = f"domains/{domain}/topics/{stem}.md"
+                if not self._lstat(rel):
+                    continue
+                text = self.read(rel)
+                if text is None:
+                    continue
+                issues = kblife.reading_note_issues(text, stem)
+                if issues:
+                    problems.append((rel, issues))
+                else:
+                    found = True
+            if not found:
+                self.report.error(f"catalog/{stem}.md", None,
+                                  f"{stem} is in state read but no domain that lists it has a valid reading note "
+                                  f"(domains/<domain>/topics/{stem}.md)")
+                for rel, issues in problems:
+                    self.report_issues(rel, issues)
 
     def reviewed_lines(self, rel):
         if not self.is_file(rel):
