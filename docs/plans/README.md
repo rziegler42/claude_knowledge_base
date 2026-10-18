@@ -113,3 +113,4 @@ Completion: Observable evidence.
 | [0003](0003-source-pipeline.md) | Completed | Source pipeline: scan and convert saved PDFs |
 | [0004](0004-domain-lifecycle-tools.md) | Completed | Domain lifecycle tools and checks |
 | [0005](0005-store-upgrade.md) | Completed | Store upgrade: install.py --upgrade |
+| [0006](0006-public-release-readiness.md) | Completed | Public release readiness: license, README, contributor guidance |

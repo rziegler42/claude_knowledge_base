@@ -161,7 +161,10 @@ schema change ships), with tests.
 upgradeable. It must land before the first `kb_schema` change after release, and
 before candidate 6 if the scanner is to be fixable in the field.
 
-### 6. Public release readiness
+### 6. Public release readiness (done 2026-10-18)
+
+Plan [0006](../plans/0006-public-release-readiness.md) delivered this. The text below is kept as the record of
+the boundary.
 
 **Outcome:** a README with a quick start (run the installer, create a domain, add a
 first wave, run the check and status, upgrade), the consume-from-another-project
