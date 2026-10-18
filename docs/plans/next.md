@@ -1,6 +1,6 @@
-# Next plan
+# Domain lifecycle tools
 
-Status: Proposed
+Status: Approved (2026-10-18, by the owner; implementation authorized in the same request)
 Created: 2026-10-18
 
 ## Goal
@@ -45,6 +45,21 @@ every criterion tagged `[C4]`.
 - Every tool reads and writes only inside the store, refuses symlinks and special files, writes through a
   temporary sibling and a rename, never deletes, and prints what it changed. Names and stems are validated
   by the same rules as `kbparse` before they reach a path.
+- Interruption protocol (a process killed between two writes). Each multi-file change is ordered so the
+  interrupted state is one the checker names exactly, and each tool either resumes it safely or refuses with
+  a precise repair instruction; no tool ever leaves a state it cannot describe:
+  - `new_domain.py` builds the whole domain tree in a hidden temporary directory under `domains/` (the
+    checker skips names starting with a dot), renames it into place in one step, and only then adds the
+    root-router row. A kill before the rename leaves only a hidden temporary directory, ignored by the
+    checker and by the next run (which refuses nothing because the name is free). A kill after the rename
+    leaves a complete domain missing only its root-router row: the checker reports exactly that, the tool
+    refuses the existing name, and its message says to add the one row by hand (the row is printed).
+  - `new_entry.py` writes the entry file, then the domain-router row. A kill between them leaves an entry
+    the router does not reference: the checker reports it, the tool refuses the duplicate ID, and the
+    message prints the row to add.
+  - `add_source.py` copies the file into place, then writes the record. It is idempotent by hash: with the
+    same bytes already in `sources/` and no record (or, for `--replace`, a record that still has the old
+    hash), a rerun completes the missing write; with different bytes it refuses.
 - Choices made in this draft that the owner may overrule:
   - New modules `kblife.py` and `kbfiles.py`; the entry template is `tools/templates/entry.md`, outside
     `domains/`, because the checker reads every `*.md` under a domain's `playbook/entries/` as an entry.
@@ -147,10 +162,13 @@ Affected areas: `kit/files/tools/new_domain.py`, `new_entry.py`, `add_source.py`
 2. Create the entry template under `tools/templates/entry.md` (front matter, the five required headings,
    `REPLACE_WITH_` placeholders for the title and situation).
 3. Implement the three tools on `kbfiles.py` and `kblife.py`: validate every name and stem before it reaches a
-   path, check every directory is real, write through a temporary sibling and a rename, order each
-   multi-file change so a failure leaves a state a rerun or the checker explains, and print each path
-   changed. Dates come from one replaceable function.
-4. Add a test that runs each tool with a symlink, a FIFO, and an over-size file in the way.
+   path, check every directory is real, write through a temporary sibling and a rename, follow the
+   interruption protocol in the assumptions above, and print each path changed. Dates come from one
+   replaceable function.
+4. Add a test that runs each tool with a symlink, a FIFO, and an over-size file in the way, and tests for the
+   interruption protocol by stopping each tool between its writes (a patched writer that raises): the
+   checker's message names the missing piece; `add_source.py` resumes by hash; `new_domain.py` and
+   `new_entry.py` refuse and print the one row to add; after adding it by hand the check passes.
 5. Run a combined scenario: create a domain, save a fixture PDF, scaffold an entry, fill the placeholders,
    and run the checker; it passes. Run the tool tests and the full suite.
 
@@ -183,12 +201,15 @@ Affected areas: `docs/development.md`, `docs/architecture.md`, `kit/files/README
 
 1. Update `docs/development.md` (commands table), `docs/architecture.md` (components and the lifecycle
    tools), the store README (one line on the tools), and the kit hint if it should name the first command.
-2. Run the owner's `security-review` skill on the new tools with the `security-reviewer` agent and hostile
-   inputs: path traversal through a domain name, slug, or stem; a symlink or FIFO at every file the tools
-   touch; a catalog or log file with injected front matter or table rows; control and bidirectional
-   characters in a title, URL, or author argument; a huge table or log (cost); a half-finished run (kill
-   between writes) and a rerun; and `--replace` on a quarantined or converted source. Add a regression test
-   that fails first for each finding.
+2. Security verification. The tests are the repository-executable evidence: named hostile-input tests for
+   path traversal through a domain name, slug, or stem; a symlink or FIFO at every file the tools touch; a
+   catalog or log file with injected front matter or table rows; control and bidirectional characters in a
+   title, URL, or author argument; a huge table or log (cost, with a time bound); a half-finished run
+   (the interruption protocol); and `--replace` on a quarantined or converted source. In addition, run the
+   owner's personal `security-review` skill with the `security-reviewer` agent (neither is part of this
+   repository; both are owner-provided tooling, used the same way for the previous plans). If either is
+   unavailable, record that in the Result and substitute a written checklist of the same cases with the
+   result of each. Add a regression test that fails first for each finding.
 3. Real-store check: create a store with the installer, then use only the tools to create a domain, save a
    PDF, convert it, scaffold an entry, and fill in the placeholders; run `check_kb.py --require-sources` and
    `kb_status.py`; confirm a second `kb_status.py` run changes nothing.
@@ -209,8 +230,9 @@ the full suite passes with no test skipped.
 ## Risks and sensitive actions
 
 - Writes into a store's tracked files (catalog records, routers, logs). Each tool validates names, refuses
-  symlinks, and writes atomically; none deletes. A multi-file change is ordered so a failure is explained by
-  the checker and a rerun completes it.
+  symlinks, and writes atomically; none deletes. A multi-file change follows the interruption protocol in the
+  assumptions: the interrupted state is one the checker names, and each tool resumes it (`add_source.py`) or
+  refuses and prints the single repair step (`new_domain.py`, `new_entry.py`).
 - Parsing untrusted markdown (question tables, logs, reading notes, `index/` files, catalog fields). The
   readers are bounded in line length and table size and run in linear time; findings never echo long
   source-derived text.
@@ -222,9 +244,15 @@ the full suite passes with no test skipped.
 
 ## Review
 
-Codex plan review: not available. The plan-review slot for `docs/plans/next.md` has been closed since plan
-0002 was archived, and `ask-codex reset` refuses a closed review. An independent read-only review of this
-plan by the `workflow-reviewer` agent is available as a substitute if the owner wants one.
+Codex plan review (2026-10-18, `gpt-5.6-luna`, effort low): converged in 2 of 3 rounds. Round 1 returned two
+major findings, both applied: the plan now defines an interruption protocol for each tool (a partial
+`new_domain.py` or `new_entry.py` is named by the checker and repaired by one printed step, and
+`add_source.py` resumes by hash) in place of an unconditional "a rerun completes it", and the security
+verification step is stated as named hostile-input tests plus the owner's personal skill and agent, with a
+written checklist as the fallback when they are unavailable. Round 2 found nothing. The plan stays Proposed
+until the owner approves it; the owner approved it on 2026-10-18. (The review slot for the earlier plan titles was closed; the owner patched the
+helper so a plan is identified by its title and creation date, and this plan was reviewed under its own
+title, `Domain lifecycle tools`.)
 
 ## Deferred work
 
