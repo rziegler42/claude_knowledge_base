@@ -31,7 +31,7 @@ any of its subject matter.
   Owner decision (2026-10-18): that was the wrong shape. Stores are standalone and need
   no way to be injected into an existing project; the template now registers or names a
   store and inserts its slot fragments (its `external-modules` specification, implemented
-  in its plans 0006 to 0008 and recorded in its ADR 0003). Candidate 2a removes
+  in its plans 0006 to 0008 and recorded in its ADR 0003). Candidate 2a (done 2026-10-18) removed
   `--add-to` and ships the descriptor the template expects
   ([ADR 0003](../decisions/0003-standalone-stores-coordinated-by-the-template.md)).
 - This repository is the generator, not a knowledge base. It will hold `install.py`,
@@ -97,7 +97,10 @@ domain tools, no domain content, no process documents.
 **Promotion trigger:** candidate 1 is complete. This fixes the `kb.json` contract the
 template integration depends on, so it should land before candidate 7.
 
-### 2a. Standalone stores
+### 2a. Standalone stores (done 2026-10-18)
+
+Plan [0002](../plans/0002-standalone-stores-and-template-descriptor.md) delivered this. The text
+below is kept as the record of the boundary.
 
 **Outcome:** `install.py` only creates stores: `--add-to`, `--skip-unsafe-entries`, marker
 and block handling, and exit status 3 are removed; the kit becomes `kit.json`,
@@ -110,9 +113,9 @@ installed into a scratch project by hand.
 **Dependencies:** candidate 2, and the template's external-module work (complete).
 **Boundary:** this repository only. No change to `claude_project_template`, no upgrade, no
 source pipeline.
-**Promotion trigger:** ADR 0003 is accepted (2026-10-18); the owner still has to
-approve the revised installer specification and the plan. This is the store-side contract (candidate 4 of the
-template's `external-modules` roadmap).
+**Promotion trigger:** ADR 0003 accepted and the revised installer specification approved
+(both 2026-10-18). This is the store-side contract (candidate 4 of the template's
+`external-modules` roadmap).
 
 ### 3. Source pipeline
 

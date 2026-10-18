@@ -103,3 +103,4 @@ Completion: Observable evidence.
 | Plan | Status | Outcome |
 |---|---|---|
 | [0001](0001-installer-kit-and-checker.md) | Completed | Installer, kit skeleton, and checker |
+| [0002](0002-standalone-stores-and-template-descriptor.md) | Completed | Standalone stores and the template descriptor |
