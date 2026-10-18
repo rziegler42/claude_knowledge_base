@@ -1,6 +1,6 @@
 # Public release readiness
 
-Status: Approved (2026-10-18, by the owner)
+Status: In Progress (approved 2026-10-18 by the owner; implementation started 2026-10-18)
 Created: 2026-10-18
 
 ## Goal
@@ -222,5 +222,35 @@ plan on 2026-10-18 and asked for its implementation.
 
 ## Result
 
-<!-- Complete this only after verification. Archive the plan according to
-README.md, then reset this file to the empty template. -->
+Implemented 2026-10-18 (not yet committed). Added `LICENSE` (MIT, with the approved copyright line),
+rewrote `README.md`, completed `CONTRIBUTING.md`, removed the stale template comments in `docs/README.md` and
+`docs/development.md`, and replaced the "skips must be zero" wording in `docs/development.md` with the
+expected-skip policy. `tests/test_repo.py` gained the license, front-matter, link, command, and contributing
+checks and the narrow exemption of the copyright line (with a test that the same text is rejected in any other
+file or with any other content on that line). The six new tests that exercise the documents failed before the
+documents existed; the exemption test exercises only new code and passed on first run.
+
+- Tests: 747 with `KB_PDF_PYTHON` set, none skipped on this machine (macOS, not root); `git diff --check`
+  clean; no `__pycache__` under `kit/` or `tests/`.
+- Audit: the personal-data test passes with only the `LICENSE` exemption. History scan: no personal path or
+  address in any file content in any commit; the only matches are the commit author field (the owner's public
+  account name and a placeholder address, on all 17 commits plus these), which this plan does not change. Every
+  placeholder token outside the five front-matter files is intentional (the installer's substitution token,
+  the kit's per-store fill-in values, specifications, architecture, and tests that describe them); none is
+  stale. No template comment remains outside the kit. Tracked non-source files are the remote-runner contract,
+  the template manifest, and the kit's `.gitkeep` and `.gitignore` files.
+- Quick start, part one, run literally in a scratch checkout: dry run and create exit 0; a new domain checks
+  clean (0 errors, 0 warnings); `kb_status.py` runs; `new_entry.py` exits 1 with the draft-charter refusal;
+  the upgrade preview and run report nothing to do. Part two (first source and entry) was not re-run, as the
+  plan said; it is backed by `tests/test_lifecycle_flow.py` and the review below.
+- Independent review (`workflow-reviewer`, read-only; it could run no tool, so it read the code and tests): no
+  wrong claim; four misleading omissions and several minor points, all applied: the entry's placeholder text
+  fails the final check until filled in; setting the charter needs every section and three questions; the
+  converter also needs `pdftotext`; the upgrade description now covers the manifest, stores the installer
+  created, unrecorded differing files, and future migration removals; the registration line's optional name
+  suffix; the `[A]` tag; links can be recorded without capture; "same content" instead of "same documents";
+  the case-sensitive-filesystem skip note. The corrected text was not re-reviewed by an agent.
+- Not verified: the project template's `--register` behavior (external); a run on Python 3.9; the whole
+  quick start against a real PDF by hand.
+- Owner actions left: making the repository public, enabling private vulnerability reporting, tagging a
+  release.

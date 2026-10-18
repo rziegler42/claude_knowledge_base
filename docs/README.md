@@ -13,9 +13,6 @@ and supporting evidence.
 - `specs/` — Durable requirements and behavioral specifications
 <!-- @module-slot: docs-index -->
 
-<!-- Add entries for reference/, perf/, security/, operations/, or other
-project-specific directories when created. -->
-
 ## Authority and lifecycle
 
 - Current architecture documents and accepted ADRs are the durable design

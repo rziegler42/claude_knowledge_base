@@ -35,7 +35,7 @@ ambiguous blank.
 | Lint or static analysis | not applicable |
 | Type check | not applicable |
 | Build | not applicable |
-| All required checks | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests && git diff --check`; report the number skipped, which must be zero |
+| All required checks | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests && git diff --check`; with `KB_PDF_PYTHON` set no PDF test may be skipped; the only expected skips are by design (the two permission tests when run as root, the test that needs an interpreter without `pymupdf`, and the case-sensitive-filesystem test, which skips on case-sensitive filesystems such as most Linux setups), so report the number skipped and name each |
 
 ## Verification workflow
 
@@ -65,9 +65,12 @@ tests instead.
 
 ## Debugging
 
-<!-- Explain how to run one test, enable useful logging, locate generated
-artifacts, reproduce common failures, and distinguish environment problems from
-product defects. -->
+Run one test file with `python3 -I -B -m unittest discover -s tests -p 'test_upgrade_plan.py'` (add `-k`
+to select a test by name). Tests build their stores and kits in temporary directories under the system
+temp directory and remove them afterwards. Preview an installer or upgrade run with `--dry-run` before
+writing anything. A skipped PDF test means `KB_PDF_PYTHON` is not set; a failure in a converter test with the
+variable set is more likely the environment (missing `pymupdf`, `pymupdf4llm`, or `pdftotext`) than the
+product, so check those first.
 
 ## Tool-specific guidance
 
