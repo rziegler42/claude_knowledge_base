@@ -1,0 +1,8 @@
+{
+  "name": "knowledge-base",
+  "kit_version": "1",
+  "description": "Knowledge-base layer: domains, a source catalog, claim-tagged playbook entries, and checking tools",
+  "requires": [],
+  "order": 40,
+  "hint": "see playbook/README.md and docs/kb/domain-lifecycle.md; run python3 tools/check_kb.py"
+}

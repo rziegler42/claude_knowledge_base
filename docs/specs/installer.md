@@ -53,8 +53,9 @@ kit/
 - The slots used are `agents-guidance` (`AGENTS.md`), `readme-docs` (`README.md`), `docs-index`
   (`docs/README.md`), and `gitignore` (`.gitignore`). These names are the project template's,
   so a project that came from the template already has the markers.
-- `base/` holds a small `README.md`, `AGENTS.md`, and `.gitignore` containing those markers,
-  used only to start an empty directory.
+- `base/` holds a small `README.md`, `AGENTS.md`, `docs/README.md`, and `.gitignore`
+  containing those markers, used only to start an empty directory. A slot whose host file is
+  neither present in the target nor in `base/` is not installed.
 - The installer implements only what this one module needs: files, slots, markers, and the
   hint. It does not resolve `requires` or other modules.
 - If the template's module format changes, this kit follows it deliberately in a later change;
@@ -185,7 +186,8 @@ No `LICENSE` is created. The project's owner chooses one.
   different; any conflict aborts the run before the first write.
 - Preflight: the run aborts, writing nothing, if the target already has a non-empty `catalog/`,
   `domains/`, `playbook/`, `sources/`, or `text/` directory, because the layer's ignore rules
-  and layout would silently change its meaning.
+  and layout would silently change its meaning. A directory holding only files identical to
+  the kit's (left by an earlier run that failed before the manifest) is not non-empty.
 - Each fragment is inserted at its marker if the host file has one. If the host file exists
   without the marker, the fragment is appended in a managed block with the same `BEGIN`/`END`
   lines. If the host file is absent, the `base/` version is written.

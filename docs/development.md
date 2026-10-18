@@ -2,8 +2,11 @@
 
 ## Setup
 
-<!-- List supported platforms, required tool versions, dependency setup, and
-local configuration. Do not include secrets. -->
+Python 3.9 or newer and git, standard library only; macOS and Linux (the installer
+uses `O_NOFOLLOW`, FIFOs, and POSIX permissions). Nothing to install. Tests write only to
+temporary directories and set `GIT_CONFIG_GLOBAL` to an empty file, so they never read or
+change your git or Claude configuration. Run Python with `-I` so a stray module in the
+working directory cannot be imported.
 
 ## Commands
 
@@ -12,15 +15,16 @@ ambiguous blank.
 
 | Purpose | Command |
 |---|---|
-| Setup | `REPLACE_WITH_COMMAND` |
-| Run locally | `REPLACE_WITH_COMMAND` |
-| One focused test | `REPLACE_WITH_COMMAND` |
-| Full tests | `REPLACE_WITH_COMMAND` |
-| Format | `REPLACE_WITH_COMMAND` |
-| Lint or static analysis | `REPLACE_WITH_COMMAND` |
-| Type check | `REPLACE_WITH_COMMAND` |
-| Build | `REPLACE_WITH_COMMAND` |
-| All required checks | `REPLACE_WITH_COMMAND` |
+| Setup | not applicable (Python 3.9+ and git; standard library only) |
+| Run locally | `python3 -I install.py <target> --git-name "N" --git-email "id+user@users.noreply.github.com"`; add `--dry-run` to preview, or `--add-to <dir>` to layer onto a project |
+| One focused test | `python3 -I -m unittest discover -s tests -p 'test_kbparse.py'` (any `test_*.py` name) |
+| Full tests | `python3 -I -m unittest discover -s tests` |
+| Check a project | `python3 -I <project>/tools/check_kb.py` (`--require-sources` once sources are saved) |
+| Format | not applicable |
+| Lint or static analysis | not applicable |
+| Type check | not applicable |
+| Build | not applicable |
+| All required checks | `python3 -I -m unittest discover -s tests && git diff --check` |
 
 ## Verification workflow
 

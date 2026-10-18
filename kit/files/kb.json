@@ -1,0 +1,6 @@
+{
+  "kind": "knowledge-base",
+  "schema": 1,
+  "router": "playbook/README.md",
+  "spec": "docs/kb/knowledge-base-format.md"
+}
