@@ -67,3 +67,11 @@ implemented yet.
 
 - `docs/specs/installer.md`
 - ADR 0001
+
+## Note (2026-10-18): `--add-to` removed
+
+ADR 0003 removes `--add-to`. The references above to a project given to `--add-to` (the untrusted
+data list, and the rule that git never runs in such a project) no longer apply. Nothing else
+changes: `--upgrade` still treats the store, its files, and its manifest as untrusted data, git
+never runs in it, and the hardened reads, writes, and path rules apply to creation and upgrade. The
+decision text above is unchanged.

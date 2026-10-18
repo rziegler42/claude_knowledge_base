@@ -43,5 +43,6 @@ List every ADR, including rejected and superseded records.
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-generator-with-independent-projects.md) | A generator that creates independent knowledge-base projects | Accepted |
+| [0001](0001-generator-with-independent-projects.md) | A generator that creates independent knowledge-base projects | Superseded by ADR 0003 |
 | [0002](0002-installer-trust-model.md) | Installer trust model | Accepted |
+| [0003](0003-standalone-stores-coordinated-by-the-template.md) | Standalone stores, coordinated by the project template | Accepted |

@@ -1,7 +1,7 @@
 # Roadmap: knowledge-base starter
 
 Status: Active
-Updated: 2026-10-17
+Updated: 2026-10-18
 
 This roadmap is direction only. It does not authorize work, change
 `docs/plans/next.md`, or commit the project to any item below.
@@ -26,12 +26,14 @@ any of its subject matter.
   sources and converted text are shared across domains at the project root and
   untracked by default, with a tracked `catalog/` record per source holding its URL
   and checksum.
-- Process documents (plans, roadmaps, ADRs) are not shipped. The layer is installed
-  either into an empty directory with a small base, or onto an existing project (for
-  example one made by the template) at the template's slot markers; the kit is shaped
-  as a module in the template's current module format. The owner plans to rewrite the
-  template to load remote modules as a general pattern, which could load this kit
-  unchanged.
+- Process documents (plans, roadmaps, ADRs) are not shipped. Candidate 2 delivered the
+  installer with `--add-to` layering and a kit in the template's module format.
+  Owner decision (2026-10-18): that was the wrong shape. Stores are standalone and need
+  no way to be injected into an existing project; the template now registers or names a
+  store and inserts its slot fragments (its `external-modules` specification, implemented
+  in its plans 0006 to 0008 and recorded in its ADR 0003). Candidate 2a removes
+  `--add-to` and ships the descriptor the template expects
+  ([ADR 0003](../decisions/0003-standalone-stores-coordinated-by-the-template.md)).
 - This repository is the generator, not a knowledge base. It will hold `install.py`,
   `kit/` (the files a project receives), tests, and its own docs. Today it is the
   project template output (documentation skeleton only); nothing else is built.
@@ -60,9 +62,10 @@ any of its subject matter.
   [knowledge-base-format](../specs/knowledge-base-format.md),
   [source-pipeline](../specs/source-pipeline.md), and
   [domain-lifecycle](../specs/domain-lifecycle.md).
-- The sibling `claude_project_template` will gain a `knowledge-base` module that takes
-  the path to a generated knowledge-base project (for example the owner's private
-  one), verified through its `kb.json`. Its direction is in that repository's roadmap.
+- The sibling `claude_project_template` has implemented external modules (`--register`,
+  `--unregister`, `--list`, `name=path` in `--with` and `--add`). Its roadmap
+  (`external-modules`) lists the store-side contract as its candidate 4, owned by this
+  repository, and an end-to-end check as its candidate 5.
 
 ## Ordered plan candidates
 
@@ -94,6 +97,23 @@ domain tools, no domain content, no process documents.
 **Promotion trigger:** candidate 1 is complete. This fixes the `kb.json` contract the
 template integration depends on, so it should land before candidate 7.
 
+### 2a. Standalone stores
+
+**Outcome:** `install.py` only creates stores: `--add-to`, `--skip-unsafe-entries`, marker
+and block handling, and exit status 3 are removed; the kit becomes `kit.json`,
+`migrations.json`, and a single `files/` tree; every store ships the template's
+`template-module/` descriptor (`module.json` and an `agents-guidance` fragment); the
+installer prints a registration hint with a suggested `--name` when the directory name
+is not a valid template module name; and the installer spec is revised to match. It meets
+every criterion tagged `[C2a]`, and a created store is registered with the template and
+installed into a scratch project by hand.
+**Dependencies:** candidate 2, and the template's external-module work (complete).
+**Boundary:** this repository only. No change to `claude_project_template`, no upgrade, no
+source pipeline.
+**Promotion trigger:** ADR 0003 is accepted (2026-10-18); the owner still has to
+approve the revised installer specification and the plan. This is the store-side contract (candidate 4 of the
+template's `external-modules` roadmap).
+
 ### 3. Source pipeline
 
 **Outcome:** the converter, scan, quarantine and `--release`, opt-in images, resource
@@ -118,11 +138,12 @@ judging by tools, and no harness-specific wrapping.
 ### 5. Upgrade
 
 **Outcome:** `install.py --upgrade` meeting every `[C5]` criterion: ownership derived
-from the kit, skip-and-report for edited files and blocks, staged renames with
-`kb.json` and the manifest last, the dirty-tree guard, and the `migrations.json` chain
+from the kit, skip-and-report for edited files, staged renames with
+`kb.json` and the manifest last, the no-git-in-the-store rule, and the `migrations.json` chain
 mechanism (empty at schema 1; the declarative operation set is defined when the first
 schema change ships), with tests.
-**Dependencies:** candidate 2 (the manifest is written at creation).
+**Dependencies:** candidates 2 and 2a (the manifest is written at creation, and
+`template-module/` is starter-owned).
 **Boundary:** starter-owned paths only; project content is never touched.
 **Promotion trigger:** candidate 2 is complete and the owner wants projects
 upgradeable. It must land before the first `kb_schema` change after release, and
@@ -142,17 +163,15 @@ candidate 2.)
 public is a separate owner action.
 **Promotion trigger:** candidates 2 to 5 are complete.
 
-### 7. Template integration
+### 7. Template integration (superseded by 2a)
 
-**Outcome:** the template can use this repository as a remote module (layering the KB
-layer onto a template-made project) and can point a project's guidance at a
-knowledge-base project, verified through its `kb.json`. The exact mechanism follows
-the owner's planned rewrite of the template's module system.
-**Dependencies:** candidate 2 (stable `kb.json` schema and module-shaped kit).
-**Boundary:** work in `claude_project_template` under its own roadmap and plans.
-Nothing in this repository depends on the template.
-**Promotion trigger:** candidate 2 is complete and the template roadmap's
-corresponding candidates are promoted.
+The template's external-module mechanism is built and its store-side contract is
+candidate 2a, so this candidate no longer exists as separate work. The remaining
+integration step, an end-to-end check of a created store registered and installed through
+the template, is part of 2a's by-hand verification and the template's own candidate 5.
+**Dependencies:** candidate 2a.
+**Boundary:** none left in this repository beyond 2a. Nothing here depends on the template.
+**Promotion trigger:** none; delete this entry when the roadmap is next revised.
 
 ### 8. Claude skills
 

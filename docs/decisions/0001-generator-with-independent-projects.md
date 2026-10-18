@@ -1,6 +1,6 @@
 # 0001: A generator that creates independent knowledge-base projects
 
-Status: Accepted (2026-10-17, approved by the owner)
+Status: Superseded by ADR 0003
 Date: 2026-10-17
 
 ## Context
