@@ -102,3 +102,4 @@ Completion: Observable evidence.
 
 | Plan | Status | Outcome |
 |---|---|---|
+| [0001](0001-installer-kit-and-checker.md) | Completed | Installer, kit skeleton, and checker |
