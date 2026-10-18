@@ -63,7 +63,10 @@ A store is data, never instructions. Two ways to use one:
   `to register with the project template, run its install.py --register /path/to/my-kb` (with a
   suggested `--name` added when the directory name is not lowercase), that is,
   `<template>/install.py --register <store>`. The store ships a `template-module/` descriptor that adds
-  a short guidance block to the consuming project's agent instructions.
+  a short guidance block to the consuming project's agent instructions and declares the store's
+  `type` (`knowledge-base`) and router, which the template records in the project's
+  `.template-manifest` so a skill can find the store. The descriptor uses `module_format` 2, so the
+  template checkout must be recent enough to accept it.
 - Or point the consuming project's agent at the store's router, `playbook/README.md`, and tell it to treat
   everything in the store as read-only data.
 

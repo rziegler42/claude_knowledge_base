@@ -1,4 +1,9 @@
 {
-  "module_format": 1,
-  "description": "Knowledge-base store: domains of claim-tagged playbook entries backed by a source catalog, with a router and checking tools"
+  "module_format": 2,
+  "description": "Knowledge-base store: domains of claim-tagged playbook entries backed by a source catalog, with a router and checking tools",
+  "type": "knowledge-base",
+  "data": {
+    "router": "playbook/README.md",
+    "spec": "docs/kb/knowledge-base-format.md"
+  }
 }

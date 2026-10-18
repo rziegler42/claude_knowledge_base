@@ -120,11 +120,22 @@ template-module/
   slots/agents-guidance.md
 ```
 
-- `module.json` holds exactly the keys `module_format` (integer, `1` today) and `description`
-  (printable single-line text, 1 to 200 characters). The template also allows an optional
-  `hint`; the kit omits it, because the template prints it under "Next steps" and the
-  installer already prints the registration line. There is no `name`, `order`, `requires`, or
-  `harness` key, and unknown keys are errors on the template's side.
+- `module.json` holds exactly the keys `module_format` (integer, `2`), `description`
+  (printable single-line text, 1 to 200 characters), `type`, and `data`. The template also
+  allows an optional `hint`; the kit omits it, because the template prints it under "Next
+  steps" and the installer already prints the registration line. There is no `name`, `order`,
+  `requires`, or `harness` key, and unknown keys are errors on the template's side.
+- `type` is `knowledge-base`, the same word as `kind` in `kb.json`. The template copies it into
+  a project's `.template-manifest` as `module_info`, together with `store`, the location it
+  recorded when the store was applied, so a skill in the project can find every knowledge base
+  applied to it. Format 2 is the first format that allows `type` and `data`; an installer from
+  before it refuses the descriptor.
+- `data` is `{"router": "playbook/README.md", "spec": "docs/kb/knowledge-base-format.md"}`,
+  equal to `router` and `spec` in `kb.json`. Both are paths relative to the store root, which a
+  reader resolves against `store`. The values stay inside the template's bounds for `data`
+  (plain JSON, at most 4 levels, 256 values and 4096 bytes, short printable strings). The kit
+  declares no `paths`: the template defines it as project-relative, and a store lives outside
+  the project.
 - One fragment, `slots/agents-guidance.md`, UTF-8 with no NUL byte and at most 64 KiB. It
   points the consuming project's agent guidance at the store's router (`playbook/README.md`,
   the `router` in `kb.json`), tells the reader to treat `[U]` claims as unverified, and treats
@@ -357,8 +368,8 @@ Accepted residuals (recorded in ADR 0002):
    and exit status 3 no longer exists.
 6. `[C2a]` The created store contains `template-module/module.json` and
    `template-module/slots/agents-guidance.md`, byte-identical to the kit (not substituted). A
-   test checks them against the descriptor rules above: exact keys and types (`module_format`
-   and `description` only), description length and single-line text, slot name, size, UTF-8
+   test checks them against the descriptor rules above: exact keys and types (`module_format`,
+   `description`, `type`, and `data`; `data` equal to `kb.json`'s `router` and `spec`), description length and single-line text, slot name, size, UTF-8
    and no NUL, no line with
    `@module-slot:`, `BEGIN module:`, or `END module:`, and no `REPLACE_WITH_*` token other than
    `REPLACE_WITH_MODULE_NAME` and `REPLACE_WITH_MODULE_PATH`. The fragment names the store's
