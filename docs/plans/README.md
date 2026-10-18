@@ -114,3 +114,4 @@ Completion: Observable evidence.
 | [0004](0004-domain-lifecycle-tools.md) | Completed | Domain lifecycle tools and checks |
 | [0005](0005-store-upgrade.md) | Completed | Store upgrade: install.py --upgrade |
 | [0006](0006-public-release-readiness.md) | Completed | Public release readiness: license, README, contributor guidance |
+| [0007](0007-declare-knowledge-base-type.md) | Completed | Declare the knowledge-base type to the project template (module_format 2) |
