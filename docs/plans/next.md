@@ -1,6 +1,6 @@
 # Store upgrade
 
-Status: Approved (2026-10-18, by the owner; approval is not an instruction to start)
+Status: In Progress (approved 2026-10-18 by the owner; implementation started 2026-10-18 on the owner's request)
 Created: 2026-10-18
 
 ## Goal
@@ -222,5 +222,28 @@ rejected with that evidence and the plan is unchanged. Round 2 found nothing. Th
 
 ## Result
 
-<!-- Complete this only after verification. Archive the plan according to
-README.md, then reset this file to the empty template. -->
+Implemented 2026-10-18 (not yet committed). `install.py --upgrade --dir <store> [--dry-run]` with the planner
+(`read_manifest`, `read_owned`, `classify`, `Stage`, `plan_upgrade`), the schema check and migration
+operations, and the staged apply (`apply_upgrade`: owned files, deletions, `kb.json`, manifest last).
+
+- Tests: 81 new tests in `tests/test_upgrade_plan.py`, `test_upgrade_migrations.py`, `test_upgrade_apply.py`
+  (helpers in `tests/stores.py`). Each increment's tests were observed failing before the code. Of the four
+  review regression tests, three were observed failing first; one passed on its first run. Full suite with
+  `KB_PDF_PYTHON` set: see the final run recorded below.
+- Real-store check: a store aged by hand (one tool edited, one deleted, one recorded checksum altered, a
+  domain and note files in content directories) was upgraded from a changed scratch copy of the starter. The
+  dry run and the real run gave the same plan (1 replace, 1 add, 1 record, 1 skip); content was byte-identical;
+  `check_kb.py --require-sources` reported 0 errors; a second run wrote nothing (it still lists the owner's
+  edited file as skipped); no temp files remained.
+- Security review (`security-reviewer`, experiments on scratch copies): no Critical or High findings. Fixed
+  with regression tests: Medium, an edited `kb.json` let the manifest `kb_schema` advance while the marker did
+  not (now a conflict that refuses before any write); Low, `--dir ""` acted on the current directory (now
+  refused); Low, a failed staging left empty new directories (now removed); Low, a migration `replace` whose
+  source differs from its path while the kit also ships that path broke an interrupted rerun (the kit is now
+  refused at load). The fixes did not get a second independent bypass attempt.
+- Accepted residuals: the delete of a `remove` target uses a path that can follow a parent symlink swapped in
+  after the final verification by a concurrent local attacker (the window ADR 0002 accepts; `remove` is unused
+  at schema 1); a SIGKILL during apply can leave `.kbtmp-*` files (ignored by reruns); replaced files keep their
+  mode; a rewritten manifest drops ignored and unknown keys; `store_schema` accepts duplicate JSON keys in the
+  store's `kb.json` (last wins, as for any JSON reader).
+- Interpretations: exit 0 when edited files were skipped; whole-run refusal on any unsafe owned path.

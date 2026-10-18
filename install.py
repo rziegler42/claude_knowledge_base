@@ -3,6 +3,7 @@
 
     ./install.py ../my-kb --git-name "Your Name" --git-email "id+user@users.noreply.github.com"
     ./install.py ../my-kb --dry-run
+    ./install.py --upgrade --dir ../my-kb [--dry-run]
 
 Standard library and git only. See docs/specs/installer.md and docs/decisions/0002-*.md
 and 0003-*.md. Exit status: 0 success, 1 refusal or error, 2 usage error.
@@ -25,6 +26,8 @@ MAX_READ = 16 * 1024 * 1024
 MAX_JSON = 1024 * 1024
 MANIFEST = ".kb-manifest"
 NAME_PLACEHOLDER = "REPLACE_WITH_PROJECT_NAME"
+DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
+MAX_LISTED = 10
 NAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,64}\Z")
 OWNED_PREFIXES = ("tools/", "docs/kb/", "domains/_skeleton/", "template-module/")
 VERBATIM_PREFIXES = ("tools/", "docs/kb/", "template-module/")
@@ -179,6 +182,9 @@ def validate_migrations(migrations, files):
                 raise InstallError(f"migrations.json: {path} is outside the starter-owned paths")
             if kind != "remove" and op.get("source") not in files:
                 raise InstallError(f"migrations.json: source {op.get('source')!r} is not in the kit")
+            if kind != "remove" and path in files and op["source"] != path:
+                raise InstallError(f"migrations.json: the source of {path} must be {path} itself "
+                                   "while the kit also ships that path")
 
 
 def load_kit(kit_dir):
@@ -303,7 +309,9 @@ def manifest_bytes(manifest):
 # ---- writing ----------------------------------------------------------------------
 
 
-def write_file(root, rel, data, executable=False):
+def stage_file(root, rel, data, executable=False, created=None):
+    """Write data to a hidden temporary sibling of rel, creating missing parent directories and
+    refusing a symlinked or non-directory component. Returns (temp, final); nothing is renamed."""
     current = root
     for part in rel.split("/")[:-1]:
         current = os.path.join(current, part)
@@ -311,6 +319,8 @@ def write_file(root, rel, data, executable=False):
             st = os.lstat(current)
         except FileNotFoundError:
             os.mkdir(current)
+            if created is not None:
+                created.append(current)
             continue
         if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
             raise InstallError(f"{current} is a symlink or not a directory; refused")
@@ -328,12 +338,33 @@ def write_file(root, rel, data, executable=False):
         with os.fdopen(fd, "wb") as handle:
             os.fchmod(handle.fileno(), mode)
             handle.write(data)
-        os.replace(temp, final)
     except BaseException:
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
+        discard(temp)
+        raise
+    return temp, final
+
+
+def discard(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def rename_into_place(temp, final):
+    os.replace(temp, final)
+
+
+def delete_file(path):
+    os.unlink(path)
+
+
+def write_file(root, rel, data, executable=False):
+    temp, final = stage_file(root, rel, data, executable)
+    try:
+        rename_into_place(temp, final)
+    except BaseException:
+        discard(temp)
         raise
 
 
@@ -496,11 +527,392 @@ def run_create(args, kit):
     return 0
 
 
+# ---- upgrade mode -----------------------------------------------------------------
+
+
+def _no_duplicates(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f"duplicate key {key!r}")
+        seen[key] = value
+    return seen
+
+
+def read_manifest(root):
+    """Read and validate a store's manifest. The store is untrusted: nothing in it is believed
+    until it passes. Returns (name, kb_schema, {owned path: digest}, [ignored keys])."""
+    path = os.path.join(root, MANIFEST)
+    try:
+        data = json.loads(read_regular(path, MAX_JSON).decode("utf-8"), object_pairs_hook=_no_duplicates)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        raise InstallError(f"{MANIFEST} is not valid JSON (or repeats a key)") from None
+    if not isinstance(data, dict):
+        raise InstallError(f"{MANIFEST} must be a JSON object")
+    if type(data.get("schema")) is not int or data["schema"] != 1:
+        raise InstallError(f"{MANIFEST} has an unknown schema; this installer reads schema 1")
+    if type(data.get("kb_schema")) is not int or data["kb_schema"] < 1:
+        raise InstallError(f"{MANIFEST}: kb_schema must be a positive integer")
+    name = data.get("name")
+    if not isinstance(name, str):
+        raise InstallError(f"{MANIFEST}: name must be text")
+    validate_name(name)
+    recorded = data.get("files")
+    if not isinstance(recorded, dict):
+        raise InstallError(f"{MANIFEST}: files must be an object")
+    files, ignored = {}, []
+    for rel, digest in recorded.items():
+        check_rel(rel, "manifest path")
+        if not isinstance(digest, str) or not DIGEST_RE.match(digest):
+            raise InstallError(f"{MANIFEST}: the checksum for {rel!r} is not 64 lowercase hex digits")
+        if owned(rel):
+            files[rel] = digest
+        else:
+            ignored.append(rel)
+    return name, data["kb_schema"], files, sorted(ignored)
+
+
+def read_owned(root, rel):
+    """The bytes of an owned path in the store, or None when it (or a parent) is missing.
+    A symlink, special file, oversize file, or non-directory parent raises."""
+    current = root
+    for part in rel.split("/")[:-1]:
+        current = os.path.join(current, part)
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise InstallError(f"{rel}: cannot inspect {part}: {exc.strerror}") from None
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            raise InstallError(f"{rel}: {part} is a symlink or not a directory")
+    final = os.path.join(root, rel)
+    try:
+        os.lstat(final)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise InstallError(f"{rel}: cannot inspect it: {exc.strerror}") from None
+    try:
+        return read_regular(final)
+    except InstallError as exc:
+        raise InstallError(f"{rel}: {exc}") from None
+
+
+def classify(recorded, disk, kit):
+    """The action for one owned file, from the specification's table."""
+    if disk is None:
+        return "add"
+    digest = sha256(disk)
+    if recorded is None:
+        return "adopt" if digest == kit else "conflict"
+    if digest == recorded:
+        return "nothing" if digest == kit else "replace"
+    return "record" if digest == kit else "skip"
+
+
+REASONS = {
+    "add": "missing from the store",
+    "replace": "unedited, and the starter has a newer version",
+    "adopt": "equals the starter's version; its checksum will be recorded",
+    "record": "edited to match the starter's version; its checksum will be recorded",
+    "skip": "edited since it was recorded; the store's version is kept",
+    "conflict": "not recorded and differs from the starter's version; the store's version is kept",
+    "report": "recorded, but no longer in the starter; kept",
+}
+
+
+def kit_schema(kit):
+    schema = json.loads(kit.files["kb.json"][0].decode("utf-8")).get("schema", 1)
+    if type(schema) is not int or schema < 1:
+        raise InstallError("kit kb.json: schema must be a positive integer")
+    return schema
+
+
+def store_schema(root):
+    """The schema in the store's own kb.json, or None when the file is missing."""
+    data = read_owned(root, "kb.json")
+    if data is None:
+        return None
+    schema = store_schema_of(data)
+    if schema is None:
+        raise InstallError("the store's kb.json is not valid JSON with an integer schema; "
+                           "fix it by hand (see docs/kb/installer.md) before upgrading")
+    return schema
+
+
+def store_schema_of(data):
+    try:
+        meta = json.loads(data.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        meta = None
+    schema = meta.get("schema") if isinstance(meta, dict) else None
+    return schema if type(schema) is int and schema >= 1 else None
+
+
+def steps_to_run(kit, recorded_schema, file_schema, target):
+    """The migration steps to apply, or a refusal. The interrupted state (kb.json already at the
+    kit's schema, the manifest not yet) is accepted; the idempotent steps then complete it."""
+    if recorded_schema > target:
+        raise InstallError(f"the store's schema ({recorded_schema}) is newer than this starter's ({target}); "
+                           "use a newer starter")
+    if file_schema is not None and file_schema != recorded_schema \
+            and not (recorded_schema < target and file_schema == target):
+        raise InstallError(f"the store's kb.json schema ({file_schema}) disagrees with {MANIFEST} "
+                           f"({recorded_schema}); resolve it by hand (see docs/kb/installer.md)")
+    if recorded_schema == target:
+        return []
+    steps = [step for step in kit.migrations["steps"] if recorded_schema <= step["from"] < target]
+    if len(steps) != target - recorded_schema:
+        raise InstallError(f"this starter has no migration chain from schema {recorded_schema} to {target}; "
+                           "follow docs/kb/ to upgrade the store by hand")
+    return steps
+
+
+class Stage:
+    """The store's owned files as the upgrade would leave them, computed without writing."""
+
+    def __init__(self, root, recorded):
+        self.root = root
+        self.record = dict(recorded)
+        self.disk = {}
+        self.seen = {}
+        self.writes = {}
+        self.deletes = []
+
+    def read(self, rel):
+        if rel not in self.disk:
+            self.disk[rel] = self.seen[rel] = read_owned(self.root, rel)
+        return self.disk[rel]
+
+    def put(self, rel, data, executable):
+        self.disk[rel] = data
+        self.writes[rel] = (data, executable)
+        self.record[rel] = sha256(data)
+        if rel in self.deletes:
+            self.deletes.remove(rel)
+
+    def drop(self, rel):
+        self.disk[rel] = None
+        self.record.pop(rel, None)
+        self.writes.pop(rel, None)
+        self.deletes.append(rel)
+
+
+CONFLICT_WHY = {
+    "add": "exists and differs from the starter's file",
+    "replace": "is missing or edited since it was recorded",
+    "remove": "is edited or not recorded",
+}
+
+
+def apply_op(stage, op, files, lines, problems, conflicts):
+    kind, rel = op["op"], op["path"]
+    try:
+        disk = stage.read(rel)
+    except InstallError as exc:
+        problems.append(str(exc))
+        return
+    recorded = stage.record.get(rel)
+    if kind == "remove":
+        if disk is None:
+            stage.record.pop(rel, None)
+            note = "already absent"
+        elif recorded is not None and sha256(disk) == recorded:
+            stage.drop(rel)
+            note = "deleted"
+        else:
+            conflicts.append(f"{rel} ({CONFLICT_WHY[kind]})")
+            return
+    else:
+        data, executable = files[op["source"]]
+        if disk == data:
+            stage.record[rel] = sha256(data)
+            note = "already done"
+        elif (kind == "add" and disk is None) or (kind == "replace" and disk is not None
+                                                  and recorded == sha256(disk)):
+            stage.put(rel, data, executable)
+            note = "written from the starter"
+        else:
+            conflicts.append(f"{rel} ({CONFLICT_WHY[kind]})")
+            return
+    lines.append((f"migrate {kind}", rel, note))
+
+
+class Upgrade:
+    def __init__(self, name, schema_from, schema_to, steps, lines, stage, ignored, recorded):
+        self.name, self.schema_from, self.schema_to, self.steps = name, schema_from, schema_to, steps
+        self.lines, self.stage, self.ignored, self.recorded = lines, stage, ignored, recorded
+
+
+def plan_upgrade(root, kit):
+    """Read-only plan of the whole upgrade: the schema check, the migration chain, then the
+    ordinary table against the post-migration state. Nothing is written."""
+    name, recorded_schema, recorded, ignored = read_manifest(root)
+    target = kit_schema(kit)
+    steps = steps_to_run(kit, recorded_schema, store_schema(root), target)
+    files = plan_files(kit, name)
+    expected = {rel: pair for rel, pair in files.items() if owned(rel)}
+    stage = Stage(root, recorded)
+    lines, problems, conflicts = [], [], []
+    for step in steps:
+        for op in step["ops"]:
+            apply_op(stage, op, files, lines, problems, conflicts)
+    for rel in sorted(expected):
+        data, executable = expected[rel]
+        try:
+            disk = stage.read(rel)
+        except InstallError as exc:
+            problems.append(str(exc))
+            continue
+        action = classify(stage.record.get(rel), disk, sha256(data))
+        if action in ("add", "replace"):
+            stage.put(rel, data, executable)
+        elif action in ("adopt", "record"):
+            stage.record[rel] = sha256(data)
+        if action != "nothing":
+            lines.append((action, rel, REASONS[action]))
+    if steps and not problems and not conflicts:
+        final = stage.disk.get("kb.json")
+        if final is None or store_schema_of(final) != target:
+            conflicts.append("kb.json (edited, so the schema marker cannot advance to "
+                             f"{target}; merge the starter's kb.json by hand)")
+    if problems:
+        unique = list(dict.fromkeys(problems))
+        more = f" (and {len(unique) - MAX_LISTED} more)" if len(unique) > MAX_LISTED else ""
+        raise InstallError("unsafe owned paths in the store, nothing was written: "
+                           + "; ".join(unique[:MAX_LISTED]) + more)
+    if conflicts:
+        raise InstallError("migration conflict, nothing was written and kb_schema is unchanged; resolve by hand "
+                           "(restore the file, or follow docs/kb/) and rerun: " + "; ".join(conflicts[:MAX_LISTED]))
+    lines += [("report", rel, REASONS["report"]) for rel in sorted(stage.record) if rel not in expected]
+    return Upgrade(name, recorded_schema, target, steps, lines, stage, ignored, dict(recorded))
+
+
+def new_manifest(plan, kit):
+    commit, dirty = starter_state()
+    return manifest_bytes({
+        "schema": 1,
+        "kb_schema": plan.schema_to,
+        "name": plan.name,
+        "kit_version": kit.meta["kit_version"],
+        "starter_commit": commit,
+        "starter_dirty": dirty,
+        "files": dict(sorted(plan.stage.record.items())),
+    })
+
+
+def verify_unchanged(root, stage, paths):
+    """Just before the first rename: every file the plan will replace or delete is still what the
+    plan read, so an edit made while the upgrade ran is never overwritten."""
+    for rel in paths:
+        try:
+            now = read_owned(root, rel)
+        except InstallError as exc:
+            raise InstallError(f"{rel} changed while the upgrade was planned ({exc}); nothing was replaced, "
+                               "rerun the upgrade") from None
+        if now != stage.seen.get(rel):
+            raise InstallError(f"{rel} changed while the upgrade was planned; nothing was replaced, "
+                               "rerun the upgrade")
+
+
+def apply_upgrade(root, plan, kit):
+    """Stage and validate everything, then rename: owned files, deletions, kb.json, the manifest.
+    A crash leaves some files replaced; a rerun detects the rest from kb.json's schema and the
+    checksums and completes the work."""
+    stage = plan.stage
+    changed = bool(stage.writes or stage.deletes or stage.record != plan.recorded
+                   or plan.schema_from != plan.schema_to)
+    if not changed:
+        return False
+    order = sorted(rel for rel in stage.writes if rel != "kb.json")
+    if "kb.json" in stage.writes:
+        order.append("kb.json")
+    manifest_data = new_manifest(plan, kit)
+    staged, temps, made = [], [], []
+    try:
+        for rel in order:
+            data, executable = stage.writes[rel]
+            temp, final = stage_file(root, rel, data, executable, made)
+            temps.append(temp)
+            staged.append((rel, temp, final, data))
+        temp, final = stage_file(root, MANIFEST, manifest_data)
+        temps.append(temp)
+        staged.append((MANIFEST, temp, final, manifest_data))
+        for rel, temp, _, data in staged:
+            if read_regular(temp) != data:
+                raise InstallError(f"the staged copy of {rel} does not match what was planned")
+        verify_unchanged(root, stage, [rel for rel in order] + list(stage.deletes))
+    except (OSError, InstallError) as exc:
+        for temp in temps:
+            discard(temp)
+        for directory in reversed(made):
+            try:
+                os.rmdir(directory)
+            except OSError:
+                pass
+        raise InstallError(f"{exc}; nothing was replaced") from None
+    done = []
+    try:
+        for rel, temp, final, _ in staged[:-1]:
+            if rel == "kb.json":
+                continue
+            rename_into_place(temp, final)
+            done.append(rel)
+        for rel in stage.deletes:
+            delete_file(os.path.join(root, rel))
+            done.append(f"{rel} (deleted)")
+        for rel, temp, final, _ in staged[:-1]:
+            if rel == "kb.json":
+                rename_into_place(temp, final)
+                done.append(rel)
+        rename_into_place(staged[-1][1], staged[-1][2])
+    except (OSError, InstallError) as exc:
+        for temp in temps:
+            discard(temp)
+        say(f"failed after completing {len(done)} step(s): {', '.join(done) or 'none'}")
+        raise InstallError(f"{getattr(exc, 'strerror', None) or exc}; rerun the same command to finish the "
+                           "upgrade (a rerun is safe and completes the remaining work)") from None
+    return True
+
+
+def run_upgrade(args, kit):
+    if not args.dir:
+        raise InstallError("the store directory must not be empty")
+    _, real, _ = resolve_target(args.dir, create=False)
+    if not printable(real):
+        raise InstallError("the store's real path is not printable single-line text; refused")
+    plan = plan_upgrade(real, kit)
+    say(f"{'Would upgrade' if args.dry_run else 'Upgrading'} {args.dir} (project name {plan.name!r}):")
+    for key in plan.ignored:
+        say(f"ignored manifest entry {key} (outside the starter-owned paths)")
+    if plan.schema_from != plan.schema_to:
+        say(f"kb_schema {plan.schema_from} -> {plan.schema_to} ({len(plan.steps)} migration step"
+            f"{'' if len(plan.steps) == 1 else 's'})")
+    for label, rel, note in plan.lines:
+        say(f"{label} {rel} ({note})")
+    if not plan.lines and not plan.ignored and plan.schema_from == plan.schema_to:
+        say("nothing to do")
+    if args.dry_run:
+        return 0
+    if not apply_upgrade(real, plan, kit):
+        say("Nothing was written.")
+        return 0
+    skipped = sum(1 for label, _, _ in plan.lines if label in ("skip", "conflict"))
+    say(f"Upgraded {args.dir}: {len(plan.stage.writes)} file(s) written, {len(plan.stage.deletes)} deleted, "
+        f"{skipped} left as they are.")
+    say("Review the changes with `git diff` and `git status` in the store; the upgrade never commits.")
+    return 0
+
+
 # ---- command line -----------------------------------------------------------------
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="Create a standalone knowledge-base store.")
-    parser.add_argument("target", help="directory for the new store")
+    parser = argparse.ArgumentParser(description="Create or upgrade a standalone knowledge-base store.")
+    parser.add_argument("target", nargs="?", help="directory for the new store")
+    parser.add_argument("--upgrade", action="store_true",
+                        help="bring an existing store's starter-owned files up to date (needs --dir)")
+    parser.add_argument("--dir", help="the store to upgrade")
     parser.add_argument("--name", help="project name (default: the directory name)")
     parser.add_argument("--git-name", help="git author name for a new project")
     parser.add_argument("--git-email", help="git author email for a new project")
@@ -510,12 +922,30 @@ def build_parser():
     return parser
 
 
+def check_usage(parser, args):
+    if args.upgrade:
+        if args.dir is None:
+            parser.error("--upgrade needs --dir <store>")
+        if args.target is not None:
+            parser.error("--upgrade takes --dir, not a target directory")
+        for option, value in (("--name", args.name), ("--git-name", args.git_name), ("--git-email", args.git_email),
+                              ("--use-global-git-identity", args.use_global_git_identity)):
+            if value:
+                parser.error(f"{option} is for creating a store and cannot be used with --upgrade")
+    else:
+        if args.dir is not None:
+            parser.error("--dir is only used with --upgrade")
+        if args.target is None:
+            parser.error("the target directory is required")
+
+
 def main(argv=None, kit_dir=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    check_usage(parser, args)
     try:
         kit = load_kit(kit_dir if kit_dir is not None else STARTER / "kit")
-        return run_create(args, kit)
+        return run_upgrade(args, kit) if args.upgrade else run_create(args, kit)
     except InstallError as exc:
         print(scrub(f"error: {exc}"), file=sys.stderr)
         return 1

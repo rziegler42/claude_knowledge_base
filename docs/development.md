@@ -25,6 +25,7 @@ ambiguous blank.
 |---|---|
 | Setup | not applicable (Python 3.9+ and git; standard library only) |
 | Run locally | `python3 -I install.py <target> --git-name "N" --git-email "id+user@users.noreply.github.com"`; add `--dry-run` to preview. It creates a standalone store and prints how to register it with the project template |
+| Upgrade a store | `python3 -I install.py --upgrade --dir <store> [--dry-run]`, run from the starter checkout. It replaces unedited starter-owned files, adds missing ones, skips and reports the owner's edits, never touches content, runs no git command against the store, and never commits; review the result with `git diff` and `git status` in the store |
 | One focused test | `python3 -I -m unittest discover -s tests -p 'test_kbparse.py'` (any `test_*.py` name) |
 | Full tests | `KB_PDF_PYTHON=<venv>/bin/python python3 -I -B -m unittest discover -s tests` (about 100 seconds; without the variable the PDF tests are skipped) |
 | Run the converter | `<venv>/bin/python -I <project>/tools/convert_sources.py` (`--scan`, `--check`, `--images`, `--release <stem>`; see `docs/kb/source-pipeline.md`) |

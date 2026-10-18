@@ -12,7 +12,7 @@ Not built yet: upgrading a store. The roadmap orders the remaining work
 
 ## Components and responsibilities
 
-- `install.py` creates a store. It uses only the Python standard library and git.
+- `install.py` creates a store and upgrades one (`--upgrade`). It uses only the Python standard library and git.
 - `kit/` is the tree the installer copies: `files/` (everything a store receives),
   `kit.json` (kit version and the closing hint), and `migrations.json` (schema migration steps,
   empty at schema 1).
@@ -43,6 +43,30 @@ Not built yet: upgrading a store. The roadmap orders the remaining work
    excluded. `.kb-manifest` is written last, listing a checksum for each starter-owned file.
 5. The installer prints the kit hint and one registration line for the template. It runs nothing else.
 
+### Upgrading a store
+
+`install.py --upgrade --dir <store>` reads the starter's kit and an existing store, and changes only
+starter-owned paths (`kb.json`, `tools/`, `docs/kb/`, `domains/_skeleton/`, `template-module/`).
+
+1. The owned set comes from the kit, never from the store's manifest. A manifest key outside the owned
+   prefixes is ignored and reported, and a malformed manifest, an unsafe path, or a bad checksum refuses
+   the run. The store is untrusted: a symlink, special file, oversize file, or symlinked parent at an owned
+   path refuses the whole run before anything is written.
+2. The schema check compares the manifest's `kb_schema` with `kb.json` and with the kit. A lower store
+   needs a contiguous chain in `kit/migrations.json` (`add`, `replace`, `remove`, each idempotent); a
+   higher store, a missing chain, or a disagreement refuses. A conflicting migration operation refuses
+   before the first write and leaves `kb_schema` unchanged.
+3. The plan is computed in memory (`Stage`): the chain first, then the ordinary table (replace unedited,
+   add missing, skip and report edited, adopt or record files equal to the kit, report conflicts, keep
+   recorded files no longer in the kit). `--dry-run` prints it and stops.
+4. Applying stages every new file as a hidden sibling, verifies the copies, re-reads each target to
+   detect an edit made since planning, then renames owned files, performs deletions, renames `kb.json`
+   (second to last), and renames the manifest last. A crash leaves some files replaced; a rerun detects the
+   rest from the manifest, `kb.json`, and checksums and finishes. Nothing is rewritten when nothing changed.
+5. Git runs only in the starter checkout, to record `starter_commit` and `starter_dirty`. The upgrade
+   never runs git in the store and never commits; it prints a reminder to review with `git diff` and
+   `git status`.
+
 ### The source pipeline
 
 A store's `convert_sources.py` uses only the standard library. For each saved PDF it starts
@@ -68,7 +92,9 @@ fails. `kb_status.py` and `check_kb.py` only read.
 ## External interfaces
 
 - Command line: `install.py <target>` with `--name`, `--git-name`, `--git-email`,
-  `--use-global-git-identity`, and `--dry-run`. Exit status 0 success, 1 refusal or error, 2 usage.
+  `--use-global-git-identity`, and `--dry-run`; or `install.py --upgrade --dir <store>` with `--dry-run`.
+  Exit status 0 success (including an upgrade that skipped edited files, which it lists), 1 refusal or
+  error, 2 usage.
 - The `template-module/` descriptor: `module.json` and an `agents-guidance` fragment, in the format
   the project template defines. It is the only coupling between the two repositories, and
   neither reads the other's code.
@@ -88,7 +114,8 @@ fails. `kb_status.py` and `check_kb.py` only read.
   here; the converter reports what is missing.
 - The installer treats the command line as intent and everything else as untrusted: it reads kit files as
   regular files with a size cap, refuses symlinks and `.git` path components, and runs git only in the
-  starter checkout and in the new directory with a scrubbed environment.
+  starter checkout and, when creating, in the new directory with a scrubbed environment; an upgrade runs
+  no git command in the store.
 - Four root files (`README.md`, `AGENTS.md`, `docs/README.md`, `.gitignore`) are written once and belong to
   the store afterwards. Starter-owned files are the ones listed in the manifest.
 - A store's descriptor follows the template's `module_format` by deliberate change, not automatically.
