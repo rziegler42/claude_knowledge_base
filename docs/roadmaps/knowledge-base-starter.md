@@ -130,7 +130,10 @@ meeting every `[C3]` criterion with fixture tests, written for the generic layou
 **Boundary:** PDFs only.
 **Promotion trigger:** candidate 2 is complete.
 
-### 4. Domain lifecycle tooling
+### 4. Domain lifecycle tooling (done 2026-10-18)
+
+Plan [0004](../plans/0004-domain-lifecycle-tools.md) delivered this. The text below is kept as the record of
+the boundary.
 
 **Outcome:** `new_domain.py`, `new_entry.py`, `add_source.py`, and `kb_status.py` as
 specified in the lifecycle spec, and the lifecycle checks added to `check_kb.py`,

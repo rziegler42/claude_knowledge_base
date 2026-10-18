@@ -111,3 +111,4 @@ Completion: Observable evidence.
 | [0001](0001-installer-kit-and-checker.md) | Completed | Installer, kit skeleton, and checker |
 | [0002](0002-standalone-stores-and-template-descriptor.md) | Completed | Standalone stores and the template descriptor |
 | [0003](0003-source-pipeline.md) | Completed | Source pipeline: scan and convert saved PDFs |
+| [0004](0004-domain-lifecycle-tools.md) | Completed | Domain lifecycle tools and checks |
