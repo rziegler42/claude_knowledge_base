@@ -117,7 +117,10 @@ source pipeline.
 (both 2026-10-18). This is the store-side contract (candidate 4 of the template's
 `external-modules` roadmap).
 
-### 3. Source pipeline
+### 3. Source pipeline (done 2026-10-18)
+
+Plan [0003](../plans/0003-source-pipeline.md) delivered this. The text below is kept as the record of the
+boundary.
 
 **Outcome:** the converter, scan, quarantine and `--release`, opt-in images, resource
 limits, and catalog updates in the source-pipeline spec, shipped in `kit/files/tools/`,

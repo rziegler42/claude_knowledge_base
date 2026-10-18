@@ -1,338 +1,238 @@
 # Next plan
 
-Status: In Progress (approved 2026-10-18 by the owner; implementation started 2026-10-18 on the owner's request)
+Status: Proposed
 Created: 2026-10-18
 
 ## Goal
 
-Ship the source pipeline in every store's `tools/`: a converter that scans each saved PDF, writes a
-Markdown and a plain-text conversion with the untrusted-content banner, quarantines a flagged
-original, updates the catalog, and bounds every run with the limits in
-`docs/specs/source-pipeline.md`. It meets every criterion tagged `[C3]`, with fixture tests and no
-network.
+Ship the domain lifecycle tooling in every store's `tools/`: `new_domain.py`, `new_entry.py`,
+`add_source.py`, and `kb_status.py`, and extend `check_kb.py` with the lifecycle checks in
+`docs/specs/domain-lifecycle.md`. A person or agent can then create a domain, save a source, scaffold
+an entry, see what a domain lacks, and have the checker enforce the artifacts, with fixture tests for
+every criterion tagged `[C4]`.
 
 ## Scope
 
-- `kit/files/tools/convert_sources.py` (the command), `convert_worker.py` (the part that opens a PDF),
-  `kbscan.py` (the scan rules that need no PDF library), and `scan_phrases.txt` (the phrase list).
-- Scan levels, hidden-text rules, the scan numbers, finding labels, and `--snippets`.
-- Conversion to `text/<stem>.md` and `.txt` with front matter, page markers, banners, and opt-in images.
-- Quarantine, stubs, `--release`, and the catalog fields the converter owns (`state`, `scan`,
-  `released`).
-- Freshness rules, `--check`, `--scan`, and the resource limits and isolation.
-- Fixture PDFs built by a small test helper, and tests for criteria 1 to 12.
-- Documentation: `docs/development.md`, `docs/architecture.md`, and the store's README.
-- Revision approved by the owner (2026-10-18, after the security review): a small amendment to the
-  specification and its kit copy (Increment F).
+- `kit/files/tools/new_domain.py`, `new_entry.py`, `add_source.py`, and `kb_status.py`.
+- `kit/files/tools/kblife.py` (readers for the lifecycle artifacts: charter, question table, log,
+  reading notes, usage tests, conflict notes) and `kit/files/tools/kbfiles.py` (the safe reads and
+  atomic writes the tools share). The converter's copies of those helpers move to `kbfiles.py`.
+- `kit/files/tools/templates/entry.md`, the entry template `new_entry.py` copies.
+- The lifecycle checks in `check_kb.py` (acceptance criterion 4) and the clone-mode behavior (criterion 6).
+- Documentation: `docs/development.md`, `docs/architecture.md`, and the store README.
 
 ## Non-goals
 
-- Web pages, other formats, OCR, and fetching from URLs (the specification's non-goals).
-- `add_source.py`, `new_domain.py`, `new_entry.py`, `kb_status.py`, and the lifecycle checks added to
-  `check_kb.py` (candidate 4). The converter reads and updates catalog records itself, and does not
-  create them or replace a source file.
-- Upgrade (candidate 5), the README quick start and `LICENSE` (candidate 6), and Claude skills
-  (candidate 8).
-- Installing a PDF library. The converter reports what is missing.
-- Changing the installer, the manifest, or `kb_schema`: new files under `tools/` are starter-owned
-  and need no schema change.
+- Searching, summarizing, or judging sources: tools only do the mechanical parts (the specification's
+  principle 5). No crawling, no URL fetching.
+- Web pages and other source formats (candidate 3 stayed PDF-only); splitting, merging, or retiring domains.
+- Upgrade (candidate 5), the README quick start and `LICENSE` (candidate 6), and Claude skills (candidate 8).
+- Changing the installer, the manifest, or `kb_schema`: new files under `tools/` are starter-owned and
+  need no schema change. The specification is not amended by this plan.
 
 ## Assumptions and constraints
 
-- Roadmap candidate 3, after candidate 2a (done). The specification is Approved (2026-10-17) and the
-  numbers in it are accepted defaults.
-- Verified on this machine: a virtual environment outside the repository holds `pymupdf` and
-  `pymupdf4llm` 1.28.2, `pdftotext` 26.10.0 is installed, and `pymupdf` exposes the data the hidden-text
-  rules need (`Page.get_texttrace()` gives render mode, opacity, fill colour, and glyph box;
-  `get_drawings()`, `embfile_count`, and `is_encrypted` exist). No dependency has to be installed.
-- The game_theory converter (`research/tools/convert_pdfs.py`) is a design reference only. It uses
-  `pymupdf`, `pymupdf4llm`, and `pdftotext`, runs under the external interpreter in isolated mode, and
-  has the same quarantine idea; its topic folders, thresholds, and extra safe schemes differ from the
-  specification and are not copied.
-- Architecture: `convert_sources.py` uses only the standard library and can run under any Python 3.9+.
-  It starts `convert_worker.py` as a child (`sys.executable -I`) for each PDF, so the time and output
-  limits can be enforced by killing the child. The worker imports `pymupdf` and `pymupdf4llm`. Run the
-  command with the external interpreter (`<venv>/bin/python -I tools/convert_sources.py`) and the
-  worker inherits it. A missing library or `pdftotext` is reported by name.
-- The command loads `kbparse.py` by file path with `importlib`, not through `sys.path`, so a decoy
-  module in the working directory or `PYTHONPATH` is never imported. The child's environment is
-  scrubbed (`PYTHON*`, `GIT_*`, and proxies dropped).
-- The converter and the scanner record: converter identity `"pymupdf4llm <version>; pdftotext <version>"`
-  (one string, because the `.md` and `.txt` must agree, freshness rule 6) and scanner version `1`.
-- Catalog edits change only the `state`, `scan`, and `released` lines of a record, by line, then
-  re-parse the result with `kbparse` before an atomic replace. Any record the strict parser refuses is
-  reported and skipped.
-- Tests run under the system Python. Those that need `pymupdf` start the converter with the
-  interpreter named by the environment variable `KB_PDF_PYTHON` and are skipped, with a visible message,
-  when it is unset. The plan's completion requires them to run. No personal path is committed.
-- Choices made in this draft that the owner may overrule: the file names above (the specification names
-  only `convert_sources.py` and `tools/scan_phrases.txt`); the worker split; `KB_PDF_PYTHON` for tests;
-  scanner version `1`.
-- Owner decision (2026-10-18): keep the link-scheme rule strict, as the specification states. Any link
-  whose scheme is not `http`, `https`, `mailto`, or `doi` is high and quarantines the source. A LaTeX
-  paper that leaves a citation key such as `gomez:ab97` as a link target will be flagged, and the
-  owner releases it by hand with `--release` after review. The specification does not change.
+- Roadmap candidate 4, after candidates 2, 2a, and 3 (done). The specification
+  (`docs/specs/domain-lifecycle.md`, Approved 2026-10-17) is the requirement; criterion 7 (`AGENTS.md`
+  guidance) was delivered by candidate 2 and only needs to keep passing.
+- Verified by reading: the skeleton already holds `questions.md`, `log.md`, `index/sources.md`,
+  `index/leads.md`, the charter with `REPLACE_WITH_` text, and the domain router; the root router has the
+  `kb:domains` markers and a three-column table; `check_kb.py` already checks entries, both routers, the
+  catalog, and `REPLACE_WITH_` text, and imports `kbparse` by inserting its own directory into `sys.path`;
+  the converter owns `state`, `scan`, and `released`, and `add_source.py` owns `saved` and `replaced`.
+- Standard library only, Python 3.9+, no new dependency, nothing installed. The new tools never open a PDF,
+  so their tests need no `KB_PDF_PYTHON`.
+- Every tool reads and writes only inside the store, refuses symlinks and special files, writes through a
+  temporary sibling and a rename, never deletes, and prints what it changed. Names and stems are validated
+  by the same rules as `kbparse` before they reach a path.
+- Choices made in this draft that the owner may overrule:
+  - New modules `kblife.py` and `kbfiles.py`; the entry template is `tools/templates/entry.md`, outside
+    `domains/`, because the checker reads every `*.md` under a domain's `playbook/entries/` as an entry.
+  - `add_source.py` accepts a `.pdf` file only (it must start like a PDF), because the converter is
+    PDF-only. A source in another format is recorded link-only (`state: recorded`) until a later candidate
+    adds that format.
+  - An entry ID is `pb-<slug>`, the slug matching `[a-z0-9-]+`, unique across all domains.
+  - `new_domain.py` fills the root-router "Purpose" cell with the title (the charter's purpose is
+    written later by a person).
+  - `kb_status.py --json` prints one object with `schema: 1`, sorted keys, and the section names used in
+    the human report; the section list is fixed in Increment D.
+  - Dates come from one function that tests replace, so output is deterministic.
 
 ## Graphify
 
-Graphify: skipped — no graph exists in this checkout. The scope is enumerated by the approved
-specification and by direct reading of the reference converter, the format specification's catalog
-rules, and the lifecycle specification's tool table. The new files are self-contained under `tools/`;
-the only existing code they touch is `kbparse.py`, read through its public functions.
+Graphify: skipped — no graph exists in this checkout. The scope is enumerated by the approved lifecycle
+specification and by direct reading of the skeleton, `check_kb.py`, `kbparse.py`, and the converter. The
+new tools are self-contained under `tools/`; the only existing code they change is the helper functions
+the converter will import from `kbfiles.py` and the additions to `check_kb.py`.
 
 ## Completion criteria
 
-- Every `[C3]` criterion (1 to 12) in `docs/specs/source-pipeline.md` has a passing test, run with
-  `KB_PDF_PYTHON` set so the PDF tests are not skipped.
-- A real fixture PDF saved in a store converts, the store passes `check_kb.py --require-sources`, and a
-  second run writes nothing.
-- A security review of the PDF reading, subprocess handling, and file writes finds nothing open.
-- `python3 -I -B -m unittest discover -s tests` (with the variable set) and `git diff --check` pass,
-  and the kit's `tools/` contains no `__pycache__`.
+- Every `[C4]` criterion (1 to 6) in `docs/specs/domain-lifecycle.md` has a passing test, and criterion 7
+  still passes.
+- A store made by the installer can, with only these tools and by hand where the specification says a person
+  writes (charter, questions, entry body): create a domain, save a PDF, convert it, scaffold and fill in an
+  entry, and pass `check_kb.py --require-sources`; `kb_status.py` then reports the domain.
+- A security review of the new tools' file handling and parsing finds nothing open.
+- `KB_PDF_PYTHON=<external interpreter> python3 -I -B -m unittest discover -s tests` and `git diff --check`
+  pass, and `kit/` contains no `__pycache__`.
 
 ## Increments
 
-### Increment A — The scan rules that need no PDF
+### Increment A — Shared readers and safe writes
 
 Dependencies: None
-Affected areas: `kit/files/tools/kbscan.py`, `kit/files/tools/scan_phrases.txt`, `tests/test_kbscan.py`
+Affected areas: `kit/files/tools/kbfiles.py`, `kit/files/tools/kblife.py`,
+`kit/files/tools/convert_sources.py`, `tests/test_kbfiles.py`, `tests/test_kblife.py`
 
-1. Write the failing tests first for the text-level rules: the phrase list (loaded from
-   `scan_phrases.txt`, one case-insensitive expression per line, matched after NFKC) with a pattern for
-   each required category; zero-width and bidirectional control counting at 5 and 6; any Unicode tag
-   character; hidden text over 200 characters or 5% of extracted text; level aggregation (the highest
-   level wins); finding labels that never carry the matched text unless snippets are on.
-2. Implement `kbscan.py` as standard-library code with a `SCANNER_VERSION = 1` and a function that
-   turns collected facts into a level and a list of labelled findings. Bound the phrase list (line
-   count and expression length) and refuse an expression that does not compile, so the list cannot
-   hang or crash the run.
-3. Ship `scan_phrases.txt` with patterns for ignoring prior instructions, claiming the reader is an AI
-   or that text is a system prompt, requesting a command or URL fetch, and asking to conceal something.
-4. Run the new tests.
+1. Write the failing tests first for `kblife.py`: the question table (columns, `q-<number>` IDs, duplicate
+   IDs, status rules: `open` lists no entry, `answered` and `partial` list at least one, `partial` needs a
+   Notes cell); the log grammar (`wave N opened` with `Goal:`, `Targets:`, `Limit:`, and optional `Gaps:`;
+   `closed` with `Added:`, `Left open:`, `Reviewed:`, and `Gap result:` when `Gaps:` was given; `abandoned`
+   with `Reason:` and `Resume from:`; `charter` with `Change:` and `Reason:`; numbering from 1 with no gap;
+   closed or abandoned only after opened and not both); the charter's six headings in order; reading notes
+   (front matter `source`, `read`, `by`, and a non-empty `## Findings`); usage-test front matter; conflict
+   notes with at least two stems.
+2. Implement `kblife.py` as pure readers over text, bounded by line and table sizes, returning positioned
+   errors and no side effects.
+3. Move the converter's `real_dir`, `write_atomic`, `read_head`, and `sha256_file` into `kbfiles.py`, have
+   `convert_sources.py` import them, and add tests for the moved behavior (symlink, special file, size cap,
+   permission-keeping rename). The existing converter tests must still pass unchanged.
+4. Run the new tests and the converter tests.
 
-Completion: the text-level cases of criteria 1 and 6 pass without a PDF library.
+Completion: the readers and shared helpers pass their tests, and the converter suite is unchanged.
 
-### Increment B — PDF fixtures and the PDF scan
+### Increment B — Lifecycle checks in `check_kb.py`
 
 Dependencies: Increment A
-Affected areas: `tests/pdffixtures.py`, `kit/files/tools/convert_worker.py`, `tests/test_scan_pdf.py`
+Affected areas: `kit/files/tools/check_kb.py`, `tests/projects.py`, `tests/test_check_lifecycle.py`
 
-1. Write a test helper that assembles fixture PDFs from raw objects: ordinary text, white text with and
-   without a filled shape behind it, text at 1.2 and 1.1 points, opacity 0.05 and 0.04, render mode 3,
-   text outside the page, an embedded file, each active-content key (`/JavaScript`, `/JS`, `/Launch`,
-   `/RichMedia`, `/SubmitForm`, `/ImportData`, `/OpenAction` and `/AA` with a non-`GoTo` action), link
-   annotations with allowlisted and non-allowlisted schemes, phrase text in visible text, an
-   annotation, and metadata, control and tag characters in text and metadata, and an encrypted file
-   (built with `pymupdf` and skipped when it is absent). Open each fixture with `pymupdf` to check it.
-2. Write the failing scan tests: every trigger in the specification's table, a fixture on each side of
-   each numeric threshold, one per allowlisted and non-allowlisted scheme, a fixture with several
-   triggers taking the highest level, and an ordinary PDF as `clean`.
-3. Implement the scan in `convert_worker.py` (`--scan` mode): embedded files, active content, link
-   schemes judged by scheme and not label, encryption, hidden text from the text trace and drawn
-   shapes, text in annotations and metadata, and the facts passed to `kbscan`. Treat the converted
-   Markdown separately in Increment C for image links.
-4. Run the tests with `KB_PDF_PYTHON` set.
+1. Write the failing tests first, one per clause of criterion 4: a set charter missing any of the six
+   headings or containing `REPLACE_WITH_`; fewer than three questions in a set domain; a domain with
+   entries and `charter: draft`; question-table failures (missing column, duplicate ID, missing entry,
+   `open` with entries, `answered` without, `partial` with an empty Notes cell); a stem in
+   `index/sources.md` with no catalog record; a usage test without a valid `result`; each log-grammar
+   failure including the `Gap result:` rules; a conflict note naming a stem with no catalog record; a source
+   in state `read` with no valid reading note in a domain that lists it, an empty Findings section, or
+   `REPLACE_WITH_` text. Add the matching passing fixtures, and the clone-mode case (criterion 6): records
+   whose sources are absent stay valid.
+2. Extend `tests/projects.py` with builders for a set domain (charter, questions, log) and a reading note.
+3. Implement the checks in `check_kb.py` using `kblife.py`. Findings name the file and line and never
+   repeat source-derived text beyond a short label.
+4. Run the checker tests and the full suite. The skeleton and a store with no domain must still pass.
 
-Completion: criterion 1 passes for every fixture, and without `KB_PDF_PYTHON` the PDF tests are
-reported as skipped, not passed.
+Completion: every clause of criterion 4 has a failing-then-passing test, and existing checker tests pass.
 
-### Increment C — Conversion, limits, and isolation
+### Increment C — The writing tools
 
-Dependencies: Increment B
-Affected areas: `kit/files/tools/convert_worker.py`, `kit/files/tools/convert_sources.py`,
-`tests/test_convert.py`
+Dependencies: Increment A (Increment B for the combined checks in step 5)
+Affected areas: `kit/files/tools/new_domain.py`, `new_entry.py`, `add_source.py`,
+`kit/files/tools/templates/entry.md`, `tests/test_new_domain.py`, `tests/test_new_entry.py`,
+`tests/test_add_source.py`
 
-1. Write the failing tests first: the converted `.md` and `.txt` start with front matter that parses
-   under the strict subset (`source`, `source_sha256`, `converter`, `scanner`, `images`, `scan`,
-   `scan_findings`, `converted`, `caveat`), then the exact banner marker and text for `clean` and
-   `review`, a source link near the top, and page markers; no `img/` directory without `--images`, images
-   written with it, and nothing marked `REVIEWED`; the Markdown image-link rule (an `http`, `https`, or
-   `data` image link makes the source high and nothing is written); each limit in the table refused with
-   a stub and a message while the run continues; a child that prints more than 1 MiB is killed and
-   reported failed; a decoy `json.py` in the working directory and in `PYTHONPATH` is never imported;
-   the worker opens no network connection (a test starts it with `socket` patched to fail).
-2. Implement the worker's conversion: `pymupdf4llm` Markdown with page markers, relative image links,
-   the page and text-size limits, and the image count limit.
-3. Implement the command's child management: start the worker with `-I` and a scrubbed environment,
-   read both pipes with a bounded buffer, enforce the 300-second and 1 MiB limits by killing the child,
-   and refuse a file over 200 MiB before starting one. Produce `.txt` with `pdftotext -layout` under the
-   same time and output bounds.
-4. Write outputs through a temporary sibling and a rename, and never modify the source.
-5. Run the tests with `KB_PDF_PYTHON` set.
+1. Write the failing tests first.
+   - `new_domain.py <name> --title <title>`: copies the skeleton, sets `domain`, `title`, `created`, and
+     `charter: draft`, writes the domain router, adds the root-router row between the markers, writes the
+     first `charter` log entry; the result passes the check. It refuses a duplicate or invalid name, a
+     missing or out-of-order marker pair, a symlinked `domains/`, and an existing path, and writes nothing
+     when it refuses.
+   - `new_entry.py <domain> <slug>`: refuses an unset charter, an unknown domain, a duplicate ID across
+     domains, and an invalid slug; creates the entry from the template with a unique `pb-` ID and a
+     domain-router row stub; the check then fails on `REPLACE_WITH_` until both are filled in.
+   - `add_source.py <stem> <file>` (with `--title`, `--tier`, `--confirmed`, `--kind`, `--url`, `--authors`):
+     copies a PDF to `sources/<stem>.pdf`, writes the record with the correct SHA-256 and `state: saved`,
+     `scan: none`; refuses an invalid stem, a symlink or special file, a file that does not start like a
+     PDF, a quarantined stem, and an existing stem without `--replace`. `--replace` updates `sha256`,
+     resets `state` to `saved` and `scan` to `none`, removes `released`, and sets `replaced`. A link-only
+     record (`--record-only`, or a non-PDF source) stays `state: recorded` with a note why.
+2. Create the entry template under `tools/templates/entry.md` (front matter, the five required headings,
+   `REPLACE_WITH_` placeholders for the title and situation).
+3. Implement the three tools on `kbfiles.py` and `kblife.py`: validate every name and stem before it reaches a
+   path, check every directory is real, write through a temporary sibling and a rename, order each
+   multi-file change so a failure leaves a state a rerun or the checker explains, and print each path
+   changed. Dates come from one replaceable function.
+4. Add a test that runs each tool with a symlink, a FIFO, and an over-size file in the way.
+5. Run a combined scenario: create a domain, save a fixture PDF, scaffold an entry, fill the placeholders,
+   and run the checker; it passes. Run the tool tests and the full suite.
 
-Completion: criteria 3 (front matter and hash), 6, 9, 10, 11, and 12 pass.
+Completion: criteria 1, 2, and 3 pass, and the combined scenario passes the check.
 
-### Increment D — Catalog, quarantine, release, freshness, and commands
+### Increment D — The status report
 
-Dependencies: Increment C
-Affected areas: `kit/files/tools/convert_sources.py`, `tests/test_convert_catalog.py`
+Dependencies: Increments A and B
+Affected areas: `kit/files/tools/kb_status.py`, `tests/test_kb_status.py`
 
-1. Write the failing tests first: a flagged fixture yields only a stub with `scan: flagged`, the
-   original lands in `sources/quarantine/`, and the record shows `scan: flagged` with `state: saved`;
-   a converted fixture sets `state: converted` and `scan`, and a second run writes nothing; each of
-   the six freshness rules taken alone makes `--check` report the conversion stale with that rule's
-   number, damaged front matter is `unreadable metadata` without a crash, and a conversion made with
-   images stays current without `--images`; `--scan` and `--check` write nothing; a missing
-   dependency is reported by name; `--release` moves a quarantined fixture back, records `released`,
-   converts it as `review` with the release statement and the high finding in `scan_findings`, does not
-   flag it again, flags a replaced file with the same trigger, and nothing converts a quarantined file
-   without `--release`; a `.txt` whose marker or `scan` disagrees with the `.md` or the catalog is stale.
-2. Implement the catalog editor (line-based, re-parsed before replace), the convert loop over records in
-   state `saved` or stale, quarantine moves, stubs, `--release`, the freshness check, `--check`,
-   `--scan`, `--snippets`, `--images`, and the limit flags.
-3. Run the tests with `KB_PDF_PYTHON` set, then the full suite.
+1. Write the failing tests first, over a fixture domain with known counts, for every item in operation 3
+   step 1: sources by state, tier, and scan; recorded-but-never-saved; quarantined awaiting release;
+   sources in the domain index that no entry cites; entries citing a replaced source; entries by status and
+   claim-tag counts, with entries that have no `[V]`; open and partial questions; open conflicts with
+   entry and stems, and a malformed conflict note (fewer than two stems); waves still open or abandoned;
+   the leads backlog; stale entries with `--stale-days`; the charter state; the latest usage test and its
+   result; and each `Gap result:` category. Also: the report writes nothing and changes no entry; `--json`
+   output is stable (sorted keys, `schema: 1`); a clone with no sources shows sources as unsaved rather than
+   failing.
+2. Implement `kb_status.py [domain]` on `kblife.py`: a read-only report, plain text by default and `--json`,
+   bounded reads, and the section names fixed by the tests.
+3. Run the status tests and the full suite.
 
-Completion: criteria 2, 3, 4, 5, 7, and 8 pass, and with the earlier increments all twelve `[C3]`
-criteria pass.
+Completion: criteria 5 and 6 pass.
 
 ### Increment E — Documents, review, and the real-store check
 
-Dependencies: Increment D
-Affected areas: `docs/development.md`, `docs/architecture.md`, `kit/files/README.md`
+Dependencies: Increments A to D
+Affected areas: `docs/development.md`, `docs/architecture.md`, `kit/files/README.md`, `kit/kit.json`
 
-1. Update `docs/development.md` with the interpreter requirement, `KB_PDF_PYTHON`, the changed "All
-   required checks" command, and how to build the external environment (as text, not run). Update
-   `docs/architecture.md` with the new components and the converter's isolation. Add one line to the
-   store's README on running the converter.
-2. Run the owner's `security-review` skill on the new code with the `security-reviewer` agent and
-   hostile fixtures: malformed and truncated PDFs, an enormous page count, decompression bombs, a
-   FIFO or symlink in `sources/` and `text/`, a stem that tries to leave the directory, a symlinked
-   `text/`, a `catalog/` record that tries to inject front matter, hostile text in a converted file
-   reaching the banner or the `--check` output, race-free atomic writes, child cleanup after a kill,
-   and environment leakage into the child. Add a regression test that fails first for each finding.
-3. Real-store check: create a store with the installer, save a fixture PDF and its catalog record by
-   hand, run the converter with the external interpreter, then run `check_kb.py --require-sources`,
-   and convert again to confirm nothing is rewritten.
+1. Update `docs/development.md` (commands table), `docs/architecture.md` (components and the lifecycle
+   tools), the store README (one line on the tools), and the kit hint if it should name the first command.
+2. Run the owner's `security-review` skill on the new tools with the `security-reviewer` agent and hostile
+   inputs: path traversal through a domain name, slug, or stem; a symlink or FIFO at every file the tools
+   touch; a catalog or log file with injected front matter or table rows; control and bidirectional
+   characters in a title, URL, or author argument; a huge table or log (cost); a half-finished run (kill
+   between writes) and a rerun; and `--replace` on a quarantined or converted source. Add a regression test
+   that fails first for each finding.
+3. Real-store check: create a store with the installer, then use only the tools to create a domain, save a
+   PDF, convert it, scaffold an entry, and fill in the placeholders; run `check_kb.py --require-sources` and
+   `kb_status.py`; confirm a second `kb_status.py` run changes nothing.
 4. Run the full suite with `KB_PDF_PYTHON` set, and `git diff --check`.
 
-Completion: documents match the built tools, the review has nothing open, the real-store check passes,
-and the full suite passes with no PDF test skipped.
-
-### Increment F — Align the specification with the reviewed behavior
-
-Dependencies: Increment E (revision approved by the owner on 2026-10-18)
-Affected areas: `docs/specs/source-pipeline.md`, `kit/files/docs/kb/source-pipeline.md`,
-`kit/files/tools/convert_worker.py`, `tests/test_scan_pdf.py`
-
-1. Write the failing test first: a PDF whose AcroForm carries an `/XFA` entry is `high`; one without is
-   unchanged.
-2. Add `/XFA` to the active-content keys in the worker.
-3. Amend the specification: add `/XFA` to the active-content list; say a shape or image counts as "behind"
-   white text only when it is visibly drawn (a fill that is not itself white and is at least half opaque);
-   say text the renderer does not report as drawn (pattern fills) is checked against the phrase list only and a
-   hit is treated as hidden text; and add the unflagged `Named` link actions and the absent memory limit to
-   the accepted residuals. The scanner version stays 1: nothing has been released with an earlier rule set.
-4. Regenerate the `docs/kb/source-pipeline.md` copy by the drift rule, and run the full suite.
-
-Completion: the amended specification, its kit copy, and the code agree, and the suite passes.
+Completion: documents match the built tools, the review has nothing open, the real-store check passes, and
+the full suite passes with no test skipped.
 
 ## Verification
 
-- `KB_PDF_PYTHON=<external interpreter> python3 -I -B -m unittest discover -s tests`: all twelve `[C3]`
-  criteria, plus the existing suite. Report the number skipped; it must be zero.
-- `python3 -I -B -m unittest discover -s tests` without the variable: the PDF tests report as skipped
-  and everything else passes, so the suite is still usable without the library.
-- `git diff --check`, and `git status` shows no `__pycache__` under `kit/`.
+- `KB_PDF_PYTHON=<external interpreter> python3 -I -B -m unittest discover -s tests`: the new `[C4]`
+  tests plus the existing suite; report the number skipped, which must be zero.
+- `python3 -I -B -m unittest discover -s tests` without the variable: the PDF tests skip and everything
+  else, including every new lifecycle test, passes.
+- `git diff --check`, and `git status` shows no `__pycache__` under `kit/` or `tests/`.
 - The real-store check in Increment E.
 
 ## Risks and sensitive actions
 
-- Untrusted input: the whole feature parses hostile PDFs. The library parses in a killed-on-limit child
-  with a scrubbed environment, but a vulnerability in `pymupdf` can still be exploited (an accepted
-  residual in the specification). The security review is part of the plan.
-- Filesystem writes: the converter moves an original into `sources/quarantine/` and rewrites catalog
-  records. Both go through temporary siblings or a single rename, refuse symlinks, and are tested against
-  hostile names.
-- Fixture PDFs with active content and tag characters are generated into temporary directories at test
-  time. Nothing hostile is committed.
-- No dependency is installed. The external environment is only used. No commit, push, or deletion
-  happens without explicit owner approval.
+- Writes into a store's tracked files (catalog records, routers, logs). Each tool validates names, refuses
+  symlinks, and writes atomically; none deletes. A multi-file change is ordered so a failure is explained by
+  the checker and a rerun completes it.
+- Parsing untrusted markdown (question tables, logs, reading notes, `index/` files, catalog fields). The
+  readers are bounded in line length and table size and run in linear time; findings never echo long
+  source-derived text.
+- `add_source.py` reads a user-named file. It opens it as a regular file without following symlinks, hashes
+  it, and checks only its first bytes; it never parses a PDF.
+- Moving the converter's helpers into `kbfiles.py` touches working code; the converter suite must stay
+  unchanged and green.
+- No dependency is installed. No commit, push, or deletion happens without explicit owner approval.
 
 ## Review
 
-Codex plan review: not run. The plan-review slot for `docs/plans/next.md` was closed when plan 0002
-was archived, and `ask-codex reset` refuses a closed review. The owner approved the plan without a
-Codex review (2026-10-18). The security review in Increment E covers the risky surface.
+Codex plan review: not available. The plan-review slot for `docs/plans/next.md` has been closed since plan
+0002 was archived, and `ask-codex reset` refuses a closed review. An independent read-only review of this
+plan by the `workflow-reviewer` agent is available as a substitute if the owner wants one.
 
 ## Deferred work
 
-- Web pages and other formats; OCR; fetching sources; and extracting text from images (the
-  specification's residuals).
-- `add_source.py --replace`, which clears `released` and sets `replaced` (candidate 4). The converter
-  only honours those fields.
-- Writing the `REVIEWED` marker for extracted images; it is a human action by design.
-- A test that checks the converter against `pymupdf` versions other than the one installed.
+- Other source formats and web capture (a later candidate) and `add_source.py` support for them.
+- Splitting, merging, or retiring domains; a per-domain stale threshold; a conflicts register.
 - Upgrade, release readiness, and skills (candidates 5, 6, and 8).
 
 ## Result
 
-Implemented 2026-10-18, uncommitted at the time of writing. Verification run:
-
-- `KB_PDF_PYTHON=<external interpreter> python3 -I -B -m unittest discover -s tests`: 422 tests pass,
-  none skipped (about 125 seconds). Without the variable the same command passes with 128 tests reported
-  as skipped. The count was 242 before this plan. `git diff --check` is clean and no `__pycache__` is left
-  under `kit/` or `tests/`.
-- Criteria: 1 (every trigger and threshold) in `tests/test_kbscan.py` and `tests/test_scan_pdf.py`; 2, 3, 4,
-  5, 7, and 8 in `tests/test_convert_catalog.py`; 3 (front matter), 6, 9, 10, 11, and 12 in
-  `tests/test_convert.py`. The worker is also tested to open no connection (a child with `socket` patched),
-  to ignore a decoy `json.py` and `pymupdf.py` in the working directory, `PYTHONPATH`, and beside the
-  worker, and to receive a scrubbed environment.
-- Real-store check: a store made by the installer, one fixture PDF saved with a hand-written record,
-  converted with the external interpreter (`clean`, `state: converted`), `check_kb.py --require-sources`
-  reported 0 errors and 0 warnings, a second run rewrote nothing, and `--check` reported all conversions
-  current. It found a defect no unit test had (`--check` listed the shipped `text/README.md` as orphaned);
-  fixed with a regression test. It was repeated on a fresh store with the final tools: `clean`, 0 errors and 0
-  warnings, a second run rewrote nothing, and `--check` reported all conversions current.
-- Security review: three rounds of an independent `security-reviewer` with scratch experiments, every
-  reproduced finding fixed with a regression test that failed first.
-  - Round 1 (six findings): a phrase wrapped over lines or drawn with a kerning array evaded the phrase list
-    (High); remote image links in reference style, entity-encoded, or with a long alt text; a URI in an
-    annotation or chained action was not judged by scheme; an action chain over six deep hid a non-GoTo
-    action; white text over a fully transparent shape was not hidden; a catalog write failure left a record
-    inconsistent. It also found `run_bounded` could wait forever on a child that closed its pipes and let a
-    grandchild outlive the run.
-  - Round 2 re-verified those fixes, ran hostile catalog records, a fork storm, and a flooding grandchild,
-    and found two more: ordinary short words could use up the letters of pattern-filled text in the
-    untraced-text comparison, and a released record over a now-clean file kept `scan: clean` (now `review`).
-  - Round 3 broke the position-based replacement for that comparison (a visible line of the same words
-    beside the pattern text; hidden text whose word gaps barely exceed its letter gaps; thousands of stacked
-    spans make it quadratic). The comparison is now a count of the page-text characters the text trace does
-    not account for: a phrase in the page text is treated as hidden when at least as many characters are
-    untraced as the phrase has (capped at 24). It is linear and does not depend on where words sit. Word
-    breaks inside a span are rebuilt at two gap factors.
-  - **Not independently reviewed:** the final character-count comparison, the two-factor word breaks, and
-    the recheck of visible text through the trace (`check_phrases`, `check_untraced`). The reviewer's third-
-    round reproductions are all tests that pass, and the false-positive cases it listed (quoted phrases in
-    letter-spaced, justified, kerned, and mid-word font-change text) are tests that stay `review`, but no
-    reviewer has tried to defeat this last design. Type3 fonts were never exercised by anyone.
-- Two guards in the tests were added without a failing case to prove them (the many-`/AA` object and the
-  figure-name spoof); they pass and stay as guards.
-
-Owner decisions, made 2026-10-18 after the security review and carried out in Increment F:
-
-1. White text and shapes: a shape counts as drawn behind white text only when its fill is not itself white and
-   is at least half opaque. The code already did this; the specification now says so.
-2. Pattern-filled text and anything else the text trace does not report as drawn: judged by the phrase list only,
-   through the character count above, and never toward the 200-character or 5% rule. The specification now
-   says so.
-3. XFA forms are flagged as high (`/XFA` joins the active-content keys, with a test). `Named` link actions stay
-   unflagged and the missing memory limit stays, both recorded as accepted residuals in the specification.
-   The scanner version stays 1: nothing was released with an earlier rule set.
-4. The 5% hidden-text rule uses the characters of the whole page text, including the hidden ones, and fires
-   for a single hidden character on a short page, as the specification states (unchanged).
-
-The amended `docs/specs/source-pipeline.md` and its regenerated `docs/kb/` copy are part of this plan's commit.
-
-Other interpretations made here: stubs carry `stub: <reason>` and `scan: flagged` (flagged) or `scan: none`
-(limit or read failures), and a stub is never current, so a failed source is retried on every run; a source
-whose record is already flagged but whose original is still in `sources/` is moved into quarantine by the next
-run, and a `--release` cut short is completed by running it again; `--release` and conversion update the
-catalog record before they move a file.
-
-Accepted residuals. The specification's own: text inside images, text clipped away or covered by a later shape,
-novel phrasings, a library exploit in `pymupdf`. New: a grandchild that calls `setsid` survives the kill; the
-race between hashing a source and the worker opening it is within ADR 0002's accepted concurrent-local-attacker
-residual; the phrase list and hidden-text rules are heuristics that a determined author can still evade.
-
-Unresolved: none open. Next: commit, and archive (`ask-codex archive` is closed for this plan path, so no plan
-review summary can be pasted; record that in the archive).
+<!-- Complete this only after verification. Archive the plan according to
+README.md, then reset this file to the empty template. -->
