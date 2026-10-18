@@ -1,6 +1,6 @@
 # Knowledge-base format
 
-Status: Draft (pending owner review)
+Status: Approved (2026-10-17)
 Updated: 2026-10-17
 
 The contract for the layout, the domain skeleton, the source catalog, playbook

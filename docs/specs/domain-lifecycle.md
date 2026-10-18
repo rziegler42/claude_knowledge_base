@@ -1,6 +1,6 @@
 # Domain lifecycle
 
-Status: Draft (pending owner review)
+Status: Approved (2026-10-17)
 Updated: 2026-10-17
 
 How a domain is created, how content is added to it, and how an existing domain is

@@ -1,6 +1,6 @@
 # Installer
 
-Status: Draft (pending owner review)
+Status: Approved (2026-10-17)
 Updated: 2026-10-17
 
 Requirements for the installer that creates a new, independently tracked knowledge-base
@@ -269,7 +269,7 @@ content. For each owned file and block, and for each recorded one no longer in t
 
 These are this specification's own requirements. They are modelled on the project
 template's installer, but nothing here depends on that repository. Candidate 1 records them
-in an ADR in this repository, and until that ADR is accepted this section is the authority.
+in ADR 0002 in this repository; this section holds the detailed requirements.
 
 - Trusted: the starter checkout run from the owner's clone, and the owner's command line as
   intent.
@@ -311,7 +311,7 @@ Hardening requirements:
   satisfies the name rule.
 - Names and every command-line value must be printable single-line text.
 
-Accepted residuals, to be recorded in the installer's ADR:
+Accepted residuals (also recorded in ADR 0002):
 
 - A concurrent local attacker can swap a parent directory for a symlink between the
   pre-write check and the rename; closing it needs directory-descriptor-relative operations.

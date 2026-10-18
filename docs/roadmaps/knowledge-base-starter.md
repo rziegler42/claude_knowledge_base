@@ -56,7 +56,7 @@ any of its subject matter.
   well-formed tags, 8 notes that wrap across lines (the spec now allows this), and four
   adoption fixes for a later import: one missing `updated`, two unquoted titles containing a
   colon, and one heading (`Evaluation pitfalls`) where `Pitfalls` is required.
-- Draft specifications: [installer](../specs/installer.md),
+- Approved specifications (2026-10-17): [installer](../specs/installer.md),
   [knowledge-base-format](../specs/knowledge-base-format.md),
   [source-pipeline](../specs/source-pipeline.md), and
   [domain-lifecycle](../specs/domain-lifecycle.md).
@@ -66,7 +66,10 @@ any of its subject matter.
 
 ## Ordered plan candidates
 
-### 1. Ratify the design
+### 1. Ratify the design (done 2026-10-17)
+
+The owner approved the four specifications and ADRs 0001 and 0002 were written and
+accepted. The text below is kept as the record of the boundary.
 
 **Outcome:** the four specifications reviewed and accepted, and ADRs recording the
 structure decision (generator, independent projects, shared catalog; alternatives:
@@ -183,4 +186,6 @@ rules depend on the user's jurisdiction.
 
 ## Related decisions
 
-None yet. Candidate 1 produces the ADRs.
+- [ADR 0001](../decisions/0001-generator-with-independent-projects.md): a generator that
+  creates independent knowledge-base projects.
+- [ADR 0002](../decisions/0002-installer-trust-model.md): installer trust model.

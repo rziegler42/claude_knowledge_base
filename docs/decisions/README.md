@@ -43,3 +43,5 @@ List every ADR, including rejected and superseded records.
 
 | ADR | Title | Status |
 |---|---|---|
+| [0001](0001-generator-with-independent-projects.md) | A generator that creates independent knowledge-base projects | Accepted |
+| [0002](0002-installer-trust-model.md) | Installer trust model | Accepted |

@@ -1,6 +1,6 @@
 # Source pipeline
 
-Status: Draft (pending owner review)
+Status: Approved (2026-10-17)
 Updated: 2026-10-17
 
 Requirements for saving sources and converting them to searchable text without letting
