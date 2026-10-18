@@ -144,7 +144,10 @@ the lifecycle spec itself, which candidate 2 already ships in `docs/kb/`.
 judging by tools, and no harness-specific wrapping.
 **Promotion trigger:** candidates 2 and 3 are complete.
 
-### 5. Upgrade
+### 5. Upgrade (done 2026-10-18)
+
+Plan [0005](../plans/0005-store-upgrade.md) delivered this. The text below is kept as the record of
+the boundary.
 
 **Outcome:** `install.py --upgrade` meeting every `[C5]` criterion: ownership derived
 from the kit, skip-and-report for edited files, staged renames with
