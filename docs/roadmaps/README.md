@@ -29,6 +29,7 @@ List active roadmaps only; the archive directory preserves history.
 
 | Roadmap | Status | Scope |
 |---|---|---|
+| [knowledge-base-starter](knowledge-base-starter.md) | Active | Generic starter that generates independent knowledge-base projects |
 
 ## Format
 

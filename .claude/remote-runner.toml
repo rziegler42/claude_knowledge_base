@@ -10,7 +10,7 @@
 # docs/development.md.
 
 [project]
-id = "claude_knowldege_base"
+id = "claude_knowledge_base"
 
 # [profiles.fast]
 # command = "make test-fast"

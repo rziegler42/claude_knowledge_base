@@ -1,4 +1,4 @@
-# claude_knowldege_base
+# claude_knowledge_base
 
 <!-- In one or two sentences, describe what this project does, who it is for,
 and its primary outcome. -->
