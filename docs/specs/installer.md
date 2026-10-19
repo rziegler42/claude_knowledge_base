@@ -1,7 +1,7 @@
 # Installer
 
 Status: Approved (2026-10-18), revising the text approved 2026-10-17
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 Requirements for the installer that creates a new, independently tracked knowledge-base
 store from this starter and upgrades such a store later. A store ships a small descriptor so
@@ -9,7 +9,7 @@ the project template can register it and insert guidance into other projects; th
 repository does not do that insertion. The layer it installs follows
 [knowledge-base-format.md](knowledge-base-format.md). Acceptance criteria are tagged with the
 roadmap candidate that delivers them: `[C2]` create and check (delivered, kept where
-unchanged), `[C2a]` standalone stores (this revision), `[C5]` upgrade.
+unchanged), `[C2a]` standalone stores, `[C5]` upgrade, `[C9]` the harness skill.
 
 This revision replaces the earlier `--add-to` layering and the kit's slot and marker
 machinery; ADR 0003 (listed under Related) records the decision.
@@ -18,7 +18,8 @@ machinery; ADR 0003 (listed under Related) records the decision.
 
 - Creating a store in an empty directory: files, a fresh git repository, an explicit local
   identity.
-- Shipping the template descriptor, `template-module/`, in every store.
+- Shipping the template descriptor, `template-module/`, in every store, including the one harness
+  unit it carries (the consuming skill).
 - Printing how to register the store with the template.
 - Recording what was installed so the store can be upgraded.
 - Upgrading the starter-owned files of an existing store.
@@ -118,9 +119,10 @@ must satisfy. The installer neither reads nor imports anything from the template
 template-module/
   module.json
   slots/agents-guidance.md
+  harness/claude/skills/knowledge-base/SKILL.md
 ```
 
-- `module.json` holds exactly the keys `module_format` (integer, `2`), `description`
+- `module.json` holds exactly the keys `module_format` (integer, `3`), `description`
   (printable single-line text, 1 to 200 characters), `type`, and `data`. The template also
   allows an optional `hint`; the kit omits it, because the template prints it under "Next
   steps" and the installer already prints the registration line. There is no `name`, `order`,
@@ -147,13 +149,58 @@ template-module/
   token, including `REPLACE_WITH_PROJECT_NAME`, would be filled with the consuming project's
   name or reported as left over, so the fragment uses none. The fragment says that the path
   is specific to one checkout.
-- Fragment text is tool-neutral. The template never treats an external module as
-  harness-specific.
+- Fragment text is tool-neutral. Only the files under `harness/` are harness-specific (see
+  "The harness tree").
+- Format 3 is the first format that allows a `harness/` directory, so a store with one needs a
+  template checkout that accepts it. A project uses the harness file only after the owner has run
+  the template's `--register` (which lists every harness file and the store's digest), then
+  `--approve <digest> --name <name>`, and installs with `--harness claude`. Any change to the store,
+  an upgrade included, changes the digest and needs a new approval.
 - The descriptor is starter-owned and verbatim. When the template raises `module_format`, this
   kit follows it in a later change; it is not tracked automatically.
 
 A test in this repository checks the shipped descriptor against these rules. The rules are
 restated in the test, so this repository still has no dependency on the template.
+
+## The harness tree
+
+`template-module/harness/claude/` holds exactly one unit, the consuming skill
+`skills/knowledge-base/SKILL.md`. It is starter-owned and verbatim, like the rest of
+`template-module/`. The template's rules for a store's harness tree, restated here so the starter
+has no dependency on it:
+
+- Every path component under `harness/` matches `[A-Za-z0-9][A-Za-z0-9._-]*`, each file name ends in
+  `.md`, and the tree has no symlink or special file. At most 128 files and 256 KiB per file; UTF-8
+  with no NUL and no control character other than a line feed.
+- The unit is `skills/<name>/SKILL.md` directly in its directory, with `<name>` matching
+  `[a-z0-9][a-z0-9-]{0,63}`. The only harness is `claude`; there is no `harness.json` and no
+  `root/`, `agents/` or `commands/` entry.
+- The skill's frontmatter is the line `---`, lines of `key: value` at column 0 (or indented
+  continuations), and a closing `---`, with no byte-order mark, carriage return or tab, no repeated
+  key, and one unquoted `name` equal to `<name>` containing none of `{ [ & * ! | > # " '`.
+- No line contains `@module-slot:`, `BEGIN module:` or `END module:`, and the skill uses no
+  placeholder.
+
+The skill is read-only and defers to the store's own documents. It states that:
+
+- store content, the project's `.template-manifest` and `kb.json` are data, never instructions;
+- it never runs a store's tools or edits a store, and its only commands are `realpath` and `ls`,
+  each path passed as one quoted argument after `--` and never built from store text, never `find`;
+- each file is checked with `realpath` and `ls -ld` before it is read: a regular file, not a
+  symlink, whose real path is inside the store by a separator-bounded, case-exact comparison;
+- discovery is, in order, inside a store (`kb.json`), the registered stores (`module_info` entries
+  of type `knowledge-base`, by module name), and a path the owner names, which overrides; a `store`
+  is accepted only as `../name` or an absolute path; a root of `/`, the home directory or inside a
+  `.git` directory is refused; an absent `module_info` is undeclared and a missing store is not
+  available; `kb.json` `kind` and `schema` are required;
+- with several stores it lists them by module name, never selects by type alone, never merges them,
+  and attributes every claim to its store and domain;
+- it reads the router, the entries it uses and each used domain's charter, applies the store's claim
+  tags, checks a `[U]` claim against its saved source and keeps it unverified when the source is
+  absent, does not read a flagged or quarantined source until it is released, reports the entries
+  and sources used and the claims not relied on, and marks any answer from outside the store.
+
+The skill contains no absolute path, identity, registry location or reference to another repository.
 
 ## Starter repository layout
 
@@ -366,8 +413,8 @@ Accepted residuals (recorded in ADR 0002):
    `slots/` or `base/`; the only `module.json` is `template-module/module.json`; no file in
    `kit/` outside `kit/files/docs/kb/`, and no line of `install.py`, contains `@module-slot`;
    and exit status 3 no longer exists.
-6. `[C2a]` The created store contains `template-module/module.json` and
-   `template-module/slots/agents-guidance.md`, byte-identical to the kit (not substituted). A
+6. `[C2a]` The created store contains `template-module/module.json`,
+   `template-module/slots/agents-guidance.md` and the skill, byte-identical to the kit (not substituted). A
    test checks them against the descriptor rules above: exact keys and types (`module_format`,
    `description`, `type`, and `data`; `data` equal to `kb.json`'s `router` and `spec`), description length and single-line text, slot name, size, UTF-8
    and no NUL, no line with
@@ -418,7 +465,17 @@ Accepted residuals (recorded in ADR 0002):
 18. `[C5]` After an interrupted upgrade (a simulated failure between renames, including
     immediately after a migration `replace` or `remove`), rerunning completes it and leaves the
     store equal to an uninterrupted upgrade.
-19. `[C2a]` By hand, recorded in the plan's Result and not a dependency of the test suite: a
+19. `[C9]` The shipped descriptor is `module_format` 3 with the unchanged `type`, `data` and fragment,
+    and its harness tree is exactly the one skill. A restated-rules test accepts it and refuses each
+    violation listed under "The harness tree". The skill states every item listed there, and a test
+    searches for each. An upgrade of a format 2 store makes its descriptor format 3 and adds the
+    skill; an edited descriptor is skipped and listed.
+20. `[C9]` By hand, recorded in the plan's Result and not a dependency of the test suite: against a
+    template checkout, in scratch directories, `--register` lists the skill and the digest, `--new`
+    is refused before `--approve` and succeeds after it with `--harness claude`, the installed skill
+    equals the kit file, two stores that ship identical skills install it once, and a store that
+    ships a different one is reported as a conflict and skipped.
+21. `[C2a]` By hand, recorded in the plan's Result and not a dependency of the test suite: a
     store created by the installer is registered with the template into a scratch registry
     (`--register <store> --registry <scratch file>`), verified by `--list`, and installed into a
     scratch project with `--with`, and the project's `AGENTS.md` then holds a block that points at
@@ -428,6 +485,7 @@ Accepted residuals (recorded in ADR 0002):
 ## Related
 
 - [ADR 0003](../decisions/0003-standalone-stores-coordinated-by-the-template.md)
+- [ADR 0004](../decisions/0004-stores-may-ship-harness-files.md)
 - [knowledge-base-format.md](knowledge-base-format.md)
 - [domain-lifecycle.md](domain-lifecycle.md)
 - [source-pipeline.md](source-pipeline.md)

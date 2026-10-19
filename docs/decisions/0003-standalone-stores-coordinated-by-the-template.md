@@ -1,6 +1,6 @@
 # 0003: Standalone stores, coordinated by the project template
 
-Status: Accepted (2026-10-18, approved by the owner)
+Status: Accepted (2026-10-18, approved by the owner); decision 2 amended for `harness/` by ADR 0004
 Date: 2026-10-18
 
 ## Context
