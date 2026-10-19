@@ -51,7 +51,7 @@ and the skill can drift from the store's own format.
 
 ## Verification
 
-Delivered by `docs/plans/0008-ship-the-knowledge-base-skill-with-the-store.md` (to be archived). The
+Delivered by `docs/plans/0008-ship-the-knowledge-base-skill-with-the-store.md`. The
 criteria are in `docs/specs/installer.md`, "The harness tree". Not accepted until that plan is
 complete and the owner approves.
 

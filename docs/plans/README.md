@@ -115,3 +115,4 @@ Completion: Observable evidence.
 | [0005](0005-store-upgrade.md) | Completed | Store upgrade: install.py --upgrade |
 | [0006](0006-public-release-readiness.md) | Completed | Public release readiness: license, README, contributor guidance |
 | [0007](0007-declare-knowledge-base-type.md) | Completed | Declare the knowledge-base type to the project template (module_format 2) |
+| [0008](0008-ship-the-knowledge-base-skill-with-the-store.md) | Completed | Ship the consuming knowledge-base skill with the store (module_format 3) |
