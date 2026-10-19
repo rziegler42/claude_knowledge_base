@@ -46,4 +46,4 @@ List every ADR, including rejected and superseded records.
 | [0001](0001-generator-with-independent-projects.md) | A generator that creates independent knowledge-base projects | Superseded by ADR 0003 |
 | [0002](0002-installer-trust-model.md) | Installer trust model | Accepted |
 | [0003](0003-standalone-stores-coordinated-by-the-template.md) | Standalone stores, coordinated by the project template | Accepted |
-| [0004](0004-stores-may-ship-harness-files.md) | A store may ship harness files, starting with the consuming skill | Proposed |
+| [0004](0004-stores-may-ship-harness-files.md) | A store may ship harness files, starting with the consuming skill | Accepted |

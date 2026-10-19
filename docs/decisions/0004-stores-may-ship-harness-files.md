@@ -1,6 +1,6 @@
 # 0004: A store may ship harness files, starting with the consuming skill
 
-Status: Proposed
+Status: Accepted (2026-10-19, approved by the owner)
 Date: 2026-10-19
 
 ## Context
@@ -52,8 +52,17 @@ and the skill can drift from the store's own format.
 ## Verification
 
 Delivered by `docs/plans/0008-ship-the-knowledge-base-skill-with-the-store.md`. The
-criteria are in `docs/specs/installer.md`, "The harness tree". Not accepted until that plan is
-complete and the owner approves.
+criteria are in `docs/specs/installer.md`, "The harness tree".
+
+Accepted by the owner on 2026-10-19, on this evidence: the plan was reviewed for one Codex round, which
+converged; it was implemented in commits `33272ef`, `33c0291` and `7357cfe`; the full suite passed with
+757 tests; and, against the template at `470ba85` in scratch directories, registration listed the skill
+and its digest, installation was refused before approval and succeeded after it, identical skills
+installed once, a differing skill was reported as a conflict and skipped, and an edit after approval
+was refused. Two adversarial reviews found no Critical or High finding; the Medium finding (a
+project manifest could point the skill at any local directory) and the Low findings were fixed.
+Open at acceptance: the global `knowledge-base` skill and that repository's ADR 0008 remain until its
+cleanup, so the two skills overlap; the template does not reject bidi or zero-width characters.
 
 ## Related files and decisions
 
