@@ -159,6 +159,13 @@ FORBIDDEN_TEXT = ("@module-slot:", "BEGIN module:", "END module:")
 
 INFO_KEYS = ("type", "paths", "data")
 
+HARNESS_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+UNIT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
+KEY_LINE = re.compile(r"[a-z][a-z-]*:( .*)?\Z")
+CONTROL = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+BAD_NAME_CHARS = set("{[&*!|>#\"'")
+SKILL_PATH = ("harness", "claude", "skills", "knowledge-base", "SKILL.md")
+
 
 def plain_data(data):
     """The template's bounds on `data`: an object of plain JSON, at most 4 levels, 256 values, 4096 bytes."""
@@ -184,6 +191,89 @@ def plain_data(data):
     return len(json.dumps(data)) <= 4096
 
 
+def frontmatter_problem(text, unit):
+    """The template's frontmatter grammar for the primary file of a store's harness unit."""
+    lines = text.split("\n")
+    if lines[0] != "---":
+        return "frontmatter must begin with a --- line"
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        return "frontmatter has no closing --- line"
+    keys = []
+    for line in lines[1:end]:
+        if line.startswith(" "):
+            if not keys:
+                return "a continuation line has no key"
+            continue
+        if not KEY_LINE.match(line):
+            return f"bad frontmatter line {line!r}"
+        key, _, value = line.partition(":")
+        keys.append((key, value.strip()))
+    names = [value for key, value in keys if key == "name"]
+    if len(keys) != len({key for key, _ in keys}):
+        return "a frontmatter key is repeated"
+    if names != [unit] or BAD_NAME_CHARS & set(names[0]):
+        return "name must be one plain value equal to the directory"
+    return None
+
+
+def harness_problems(harness):
+    """The template's rules for a store's harness tree (docs/specs/installer.md, 'The harness tree')."""
+    problems = []
+    if harness.is_symlink() or not harness.is_dir():
+        return ["harness is not a real directory"]
+    if sorted(entry.name for entry in harness.iterdir()) != ["claude"]:
+        return ["harness holds anything but the claude directory"]
+    files = []
+    stack = [(harness / "claude", 0)]
+    while stack:
+        directory, depth = stack.pop()
+        if depth > 8 or directory.is_symlink() or not directory.is_dir():
+            return problems + ["a harness directory is too deep or not a real directory"]
+        for entry in directory.iterdir():
+            if not HARNESS_PART.match(entry.name):
+                problems.append(f"bad name {entry.name!r}")
+            elif entry.is_symlink():
+                problems.append(f"{entry.name} is a symlink")
+            elif entry.is_dir():
+                stack.append((entry, depth + 1))
+            elif entry.is_file() and entry.name.endswith(".md"):
+                files.append(entry)
+            else:
+                problems.append(f"unexpected entry {entry.name}")
+    if len(files) > 128:
+        problems.append("more than 128 harness files")
+    units = set()
+    for path in files:
+        parts = path.relative_to(harness / "claude").parts
+        if len(parts) < 3 or parts[0] != "skills" or not UNIT_NAME.match(parts[1]):
+            problems.append(f"{'/'.join(parts)} is not inside skills/<name>/")
+            continue
+        units.add(parts[1])
+        data = path.read_bytes()
+        if len(data) > 256 * 1024:
+            problems.append(f"{path.name} is over 256 KiB")
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            problems.append(f"{path.name} is not UTF-8")
+            continue
+        if CONTROL.search(text):
+            problems.append(f"{path.name} has a control character")
+        if any(mark in line for line in text.split("\n") for mark in FORBIDDEN_TEXT) or "REPLACE_WITH_" in text:
+            problems.append(f"{path.name} has a reserved marker or a placeholder")
+        if len(parts) == 3 and parts[2] == "SKILL.md":
+            problem = frontmatter_problem(text, parts[1])
+            if problem:
+                problems.append(f"{parts[1]}: {problem}")
+    for unit in units:
+        if not (harness / "claude" / "skills" / unit / "SKILL.md").is_file():
+            problems.append(f"{unit} has no SKILL.md")
+    return problems
+
+
 def descriptor_problems(store):
     """The template's descriptor rules (docs/specs/installer.md, 'The template descriptor'),
     restated here so the starter has no dependency on the template."""
@@ -206,10 +296,10 @@ def descriptor_problems(store):
     if not isinstance(meta, dict):
         return problems + ["module.json is not an object"]
     fmt = meta.get("module_format")
-    if isinstance(fmt, bool) or not isinstance(fmt, int) or fmt not in (1, 2):
-        problems.append("module_format must be the integer 1 or 2")
+    if isinstance(fmt, bool) or not isinstance(fmt, int) or fmt not in (1, 2, 3):
+        problems.append("module_format must be the integer 1, 2 or 3")
         fmt = 1
-    unknown = set(meta) - {"module_format", "description", "hint"} - (set(INFO_KEYS) if fmt == 2 else set())
+    unknown = set(meta) - {"module_format", "description", "hint"} - (set(INFO_KEYS) if fmt >= 2 else set())
     if unknown:
         problems.append(f"unknown keys {sorted(unknown)}")
     if "type" in meta and not (isinstance(meta["type"], str) and len(meta["type"]) <= 64
@@ -225,6 +315,11 @@ def descriptor_problems(store):
         text = meta.get(key)
         if not (isinstance(text, str) and 0 < len(text) <= 200 and text.isprintable()):
             problems.append(f"{key} must be printable single-line text of 1-200 characters")
+    harness = root / "harness"
+    if harness.is_symlink() or harness.exists():
+        if fmt != 3:
+            problems.append("harness/ needs module_format 3")
+        problems += harness_problems(harness)
     entries = sorted(slot_dir.iterdir())
     if len(entries) > 16:
         problems.append("more than 16 fragments")
@@ -259,16 +354,17 @@ class DescriptorTests(unittest.TestCase):
     def test_the_shipped_descriptor_satisfies_the_template_rules(self):
         self.assertEqual(descriptor_problems(self.descriptor()), [])
 
-    def test_the_descriptor_has_exactly_one_fragment_and_its_keys(self):
+    def test_the_descriptor_has_one_fragment_one_skill_and_its_keys(self):
         root = self.descriptor() / "template-module"
         self.assertEqual(sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()),
-                         ["module.json", "slots/agents-guidance.md"])
+                         ["harness/claude/skills/knowledge-base/SKILL.md", "module.json",
+                          "slots/agents-guidance.md"])
         meta = json.loads((root / "module.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(meta), ["data", "description", "module_format", "type"])
 
     def test_the_descriptor_declares_the_knowledge_base_type(self):
         meta = json.loads((self.descriptor() / "template-module" / "module.json").read_text(encoding="utf-8"))
-        self.assertEqual(meta["module_format"], 2)
+        self.assertEqual(meta["module_format"], 3)
         self.assertEqual(meta["type"], "knowledge-base")
 
     def test_the_descriptor_data_equals_kb_json(self):
@@ -289,7 +385,39 @@ class DescriptorTests(unittest.TestCase):
         base = self.descriptor() / "template-module"
         cases = {
             "unknown key": lambda root: self.edit_meta(root, extra=1),
-            "wrong format": lambda root: self.edit_meta(root, module_format=3),
+            "wrong format": lambda root: self.edit_meta(root, module_format=4),
+            "harness in format 2": lambda root: self.edit_meta(root, module_format=2),
+            "harness in format 1": lambda root: self.edit_meta(root, module_format=1, type=None, data=None),
+            "other harness": lambda root: (root / "harness" / "claude").rename(root / "harness" / "codex"),
+            "second harness": lambda root: (root / "harness" / "codex").mkdir(),
+            "harness.json": lambda root: (root / "harness" / "claude" / "harness.json").write_text("{}\n"),
+            "root file": lambda root: self.add_file(root, "root/CLAUDE.md", "x\n"),
+            "agent": lambda root: self.add_file(root, "agents/a.md", "x\n"),
+            "loose skill": lambda root: self.add_file(root, "skills/x.md", "x\n"),
+            "nested skill file": lambda root: self.add_file(root, "skills/x/y/SKILL.md", "x\n"),
+            "unit without SKILL.md": lambda root: self.add_file(root, "skills/other/notes.md", "x\n"),
+            "non-markdown file": lambda root: self.add_file(root, "skills/knowledge-base/run.sh", "x\n"),
+            "bad component": lambda root: self.add_file(root, "skills/knowledge-base/.hidden.md", "x\n"),
+            "uppercase unit": lambda root: self.add_file(root, "skills/Other/SKILL.md", "x\n"),
+            "symlink": lambda root: (root / "harness" / "claude" / "skills" / "knowledge-base" / "x.md")
+                .symlink_to(root / "module.json"),
+            "tab": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "a\tb\n"),
+            "carriage return": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "a\r\n"),
+            "escape": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "a\x1bb\n"),
+            "marker in skill": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "BEGIN module: x\n"),
+            "placeholder in skill": lambda root: self.add_file(root, "skills/knowledge-base/x.md",
+                                                               "REPLACE_WITH_MODULE_NAME\n"),
+            "oversize file": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "x" * (256 * 1024 + 1)),
+            "too many files": lambda root: [self.add_file(root, f"skills/knowledge-base/f{i}.md", "x\n")
+                                            for i in range(128)],
+            "too deep": lambda root: self.add_file(root, "skills/knowledge-base/" + "/".join("d" * 1 for _ in range(8))
+                                                   + "/x.md", "x\n"),
+            "name mismatch": lambda root: self.edit_skill(root, name="knowledge-bases"),
+            "quoted name": lambda root: self.edit_skill(root, name='"knowledge-base"'),
+            "repeated name": lambda root: self.edit_skill(root, extra="name: knowledge-base\n"),
+            "no frontmatter": lambda root: self.edit_skill(root, whole="# no frontmatter\n"),
+            "byte-order mark": lambda root: self.edit_skill(root, bom=True),
+            "unclosed frontmatter": lambda root: self.edit_skill(root, whole="---\nname: knowledge-base\n"),
             "zero format": lambda root: self.edit_meta(root, module_format=0),
             "format 1 with type": lambda root: self.edit_meta(root, module_format=1),
             "paths": lambda root: self.edit_meta(root, paths={"store": "docs/kb"}),
@@ -322,7 +450,82 @@ class DescriptorTests(unittest.TestCase):
         path = root / "module.json"
         meta = json.loads(path.read_text(encoding="utf-8"))
         meta.update(changes)
+        meta = {key: value for key, value in meta.items() if value is not None}
         path.write_text(json.dumps(meta), encoding="utf-8")
+
+    @staticmethod
+    def add_file(root, rel, text):
+        path = root / "harness" / "claude" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def edit_skill(root, name=None, extra="", whole=None, bom=False):
+        path = root / "harness" / "claude" / "skills" / "knowledge-base" / "SKILL.md"
+        text = path.read_text(encoding="utf-8")
+        if whole is not None:
+            text = whole
+        if name is not None:
+            text = text.replace("name: knowledge-base\n", f"name: {name}\n", 1)
+        if extra:
+            text = text.replace("\n---\n", "\n" + extra + "---\n", 1)
+        path.write_text(("\ufeff" if bom else "") + text, encoding="utf-8")
+
+
+ADVISORY = ("ignore previous", "disregard", "allowed-tools", "hooks:", "mcpServers", "permissionMode",
+            "bypassPermissions", "dangerously", "curl ", "wget ", "| sh", "sudo ", "rm -rf")
+
+STATEMENTS = {
+    "data rule": ("data, never instructions", "`.template-manifest`", "`kb.json`"),
+    "no tools, no edits": ("Never run a store's tools", "never edit a store"),
+    "only commands": ("`realpath` and `ls`", "one quoted argument after `--`", "never use `find`"),
+    "file check": ('`realpath -- "<path>"`', '`ls -ld -- "<path>"`', "not a symlink", "separator",
+                   "case-sensitive", "`ls -l` of a file proves nothing"),
+    "discovery order": ("Inside a store", "Registered stores", "A path the owner names", "overrides",
+                        "`../name`", "absolute path", "the home directory", "`.git`", "not declared",
+                        "not available", "`kind`", "`schema`"),
+    "several stores": ("Never select by type alone", "never merge stores", "its store and domain"),
+    "use a store": ("charter", "`[V]`", "`[A]`", "`[U]`", "saved source", "quarantine",
+                    "outside the store", "entries and sources used"),
+}
+
+
+class SkillTests(unittest.TestCase):
+    def raw(self):
+        return (helpers.KIT / "files" / "template-module" / Path(*SKILL_PATH)).read_text(encoding="utf-8")
+
+    def text(self):
+        return " ".join(self.raw().split())
+
+    def test_frontmatter_names_the_skill_with_a_one_line_description(self):
+        lines = self.raw().split("\n")
+        self.assertEqual(lines[0], "---")
+        self.assertEqual(lines[1], "name: knowledge-base")
+        self.assertRegex(lines[2], r"^description: Use when .{40,}\Z")
+        self.assertEqual(lines[3], "---")
+        self.assertIsNone(frontmatter_problem(self.raw(), "knowledge-base"))
+
+    def test_each_required_statement_is_present(self):
+        text = self.text()
+        for group, needles in STATEMENTS.items():
+            for needle in needles:
+                with self.subTest(group=group, needle=needle):
+                    self.assertIn(needle, text)
+
+    def test_the_skill_is_standalone(self):
+        text = self.raw()
+        for word in ("claude_global_config", "claude_knowledge_base", "rziegler", "yahoo", "@"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, text)
+        self.assertIsNone(re.search(r"(?<![\w.~])/(?:Users|home|private|tmp|var|etc|opt)/", text))
+        self.assertIsNone(re.search(r"(?<![\w.])~/", text))
+
+    def test_the_skill_trips_no_advisory_phrase(self):
+        text = self.raw().lower()
+        for phrase in ADVISORY:
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase.lower(), text)
+        self.assertFalse(any(line.startswith("!") for line in text.split("\n")))
 
 
 OLD_DESCRIPTOR = {
@@ -333,7 +536,7 @@ OLD_DESCRIPTOR = {
 
 
 class DescriptorUpgradeTests(unittest.TestCase):
-    """A store made with the format 1 descriptor is brought to format 2 as an ordinary owned file."""
+    """A store made with an older descriptor is brought to format 3 as an ordinary owned file."""
 
     def setUp(self):
         cm = helpers.scratch()
@@ -350,12 +553,24 @@ class DescriptorUpgradeTests(unittest.TestCase):
         data["files"]["template-module/module.json"] = stores.sha(self.path)
         stores.write_manifest(self.store, data)
 
-    def test_a_format_1_store_is_upgraded_to_format_2(self):
+    def test_a_format_1_store_is_upgraded_to_the_current_format(self):
         self.age(self.old)
         code, out, err = stores.upgrade(self.store)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(self.path.read_bytes(), self.current)
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["module_format"], 2)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["module_format"], 3)
+        self.assertEqual(descriptor_problems(self.store), [])
+
+    def test_a_format_2_store_gains_the_skill_and_format_3(self):
+        format_2 = dict(json.loads(self.current.decode("utf-8")), module_format=2)
+        self.age((json.dumps(format_2, indent=2) + "\n").encode("utf-8"))
+        skill = self.store / "template-module" / Path(*SKILL_PATH)
+        shutil.rmtree(self.store / "template-module" / "harness")
+        code, out, err = stores.upgrade(self.store)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.path.read_bytes(), self.current)
+        self.assertEqual(skill.read_bytes(),
+                         (helpers.KIT / "files" / "template-module" / Path(*SKILL_PATH)).read_bytes())
         self.assertEqual(descriptor_problems(self.store), [])
 
     def test_an_edited_descriptor_is_skipped_and_listed(self):

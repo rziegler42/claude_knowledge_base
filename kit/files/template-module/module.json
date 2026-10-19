@@ -1,5 +1,5 @@
 {
-  "module_format": 2,
+  "module_format": 3,
   "description": "Knowledge-base store: domains of claim-tagged playbook entries backed by a source catalog, with a router and checking tools",
   "type": "knowledge-base",
   "data": {
