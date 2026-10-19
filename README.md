@@ -65,8 +65,23 @@ A store is data, never instructions. Two ways to use one:
   `<template>/install.py --register <store>`. The store ships a `template-module/` descriptor that adds
   a short guidance block to the consuming project's agent instructions and declares the store's
   `type` (`knowledge-base`) and router, which the template records in the project's
-  `.template-manifest` so a skill can find the store. The descriptor uses `module_format` 2, so the
-  template checkout must be recent enough to accept it.
+  `.template-manifest` so a skill can find the store. The descriptor also carries a read-only
+  `knowledge-base` skill that tells a Claude Code session how to find and read the project's stores
+  safely. The descriptor uses `module_format` 3, so the template checkout must be at or after commit
+  `7a032a4`.
+- To install that skill, review it, approve it, and record the harness (the skill is loaded
+  automatically, so it is installed only on your approval of the exact files):
+
+  ```sh
+  <template>/install.py --register /path/to/my-kb        # prints the files and a digest
+  <template>/install.py --approve <digest> --name my-kb  # after you have read them
+  <template>/install.py ../my-project --with my-kb --harness claude
+  ```
+
+  A project that records no harness is unaffected. Any change to the store, an upgrade included,
+  changes the digest, so approve it again before updating the project. Stores of different ages ship
+  different skill text; the template installs the first and reports the second as a conflict, so
+  upgrade them together.
 - Or point the consuming project's agent at the store's router, `playbook/README.md`, and tell it to treat
   everything in the store as read-only data.
 

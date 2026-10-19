@@ -1,6 +1,7 @@
 import json
 import re
 import shutil
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -162,7 +163,7 @@ INFO_KEYS = ("type", "paths", "data")
 HARNESS_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 UNIT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 KEY_LINE = re.compile(r"[a-z][a-z-]*:( .*)?\Z")
-CONTROL = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+CONTROL = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f\u2028\u2029]")
 BAD_NAME_CHARS = set("{[&*!|>#\"'")
 SKILL_PATH = ("harness", "claude", "skills", "knowledge-base", "SKILL.md")
 
@@ -191,6 +192,22 @@ def plain_data(data):
     return len(json.dumps(data)) <= 4096
 
 
+def fold(text):
+    nfc = unicodedata.normalize
+    return nfc("NFC", nfc("NFC", text).casefold())
+
+
+def duplicate_paths(paths):
+    """Paths equal after the template's key function, NFC(casefold(NFC(x)))."""
+    seen, duplicates = {}, []
+    for path in paths:
+        key = fold(path)
+        if key in seen:
+            duplicates.append(path)
+        seen[key] = path
+    return duplicates
+
+
 def frontmatter_problem(text, unit):
     """The template's frontmatter grammar for the primary file of a store's harness unit."""
     lines = text.split("\n")
@@ -203,8 +220,10 @@ def frontmatter_problem(text, unit):
     keys = []
     for line in lines[1:end]:
         if line.startswith(" "):
-            if not keys:
-                return "a continuation line has no key"
+            if not keys or not line.strip():
+                return "a continuation line has no key or no text"
+            if keys[-1][0] == "name":
+                return "the name continues onto another line"
             continue
         if not KEY_LINE.match(line):
             return f"bad frontmatter line {line!r}"
@@ -225,13 +244,16 @@ def harness_problems(harness):
         return ["harness is not a real directory"]
     if sorted(entry.name for entry in harness.iterdir()) != ["claude"]:
         return ["harness holds anything but the claude directory"]
-    files = []
+    files, total = [], 0
     stack = [(harness / "claude", 0)]
     while stack:
         directory, depth = stack.pop()
         if depth > 8 or directory.is_symlink() or not directory.is_dir():
             return problems + ["a harness directory is too deep or not a real directory"]
-        for entry in directory.iterdir():
+        entries = list(directory.iterdir())
+        if len(entries) > 128:
+            problems.append("more than 128 entries in a harness directory")
+        for entry in entries:
             if not HARNESS_PART.match(entry.name):
                 problems.append(f"bad name {entry.name!r}")
             elif entry.is_symlink():
@@ -240,16 +262,23 @@ def harness_problems(harness):
                 stack.append((entry, depth + 1))
             elif entry.is_file() and entry.name.endswith(".md"):
                 files.append(entry)
+                total += entry.stat().st_size
             else:
                 problems.append(f"unexpected entry {entry.name}")
     if len(files) > 128:
         problems.append("more than 128 harness files")
+    if total > 2 * 1024 * 1024:
+        problems.append("harness tree over 2 MiB")
     units = set()
     for path in files:
         parts = path.relative_to(harness / "claude").parts
         if len(parts) < 3 or parts[0] != "skills" or not UNIT_NAME.match(parts[1]):
             problems.append(f"{'/'.join(parts)} is not inside skills/<name>/")
             continue
+        if len(parts) > 8:
+            problems.append(f"{path.name} is deeper than 8 components")
+        if len(".claude/" + "/".join(parts)) > 256:
+            problems.append(f"{path.name} has an installed path over 256 characters")
         units.add(parts[1])
         data = path.read_bytes()
         if len(data) > 256 * 1024:
@@ -268,6 +297,8 @@ def harness_problems(harness):
             problem = frontmatter_problem(text, parts[1])
             if problem:
                 problems.append(f"{parts[1]}: {problem}")
+    if duplicate_paths("/".join(path.relative_to(harness / "claude").parts) for path in files):
+        problems.append("two harness paths are equal after case folding")
     for unit in units:
         if not (harness / "claude" / "skills" / unit / "SKILL.md").is_file():
             problems.append(f"{unit} has no SKILL.md")
@@ -412,6 +443,16 @@ class DescriptorTests(unittest.TestCase):
                                             for i in range(128)],
             "too deep": lambda root: self.add_file(root, "skills/knowledge-base/" + "/".join("d" * 1 for _ in range(8))
                                                    + "/x.md", "x\n"),
+            "installed path over 256": lambda root: self.add_file(
+                root, "skills/knowledge-base/" + "/".join("d" * 40 for _ in range(4)) + "/" + "f" * 70 + ".md", "x\n"),
+            "nine components": lambda root: self.add_file(root, "skills/knowledge-base/a/b/c/d/e/f/x.md", "x\n"),
+            "129 directories": lambda root: [(root / "harness" / "claude" / "skills" / "knowledge-base" / f"d{i}").mkdir()
+                                             for i in range(129)],
+            "tree over 2 MiB": lambda root: [self.add_file(root, f"skills/knowledge-base/b{i}.md", "x" * 250000)
+                                             for i in range(9)],
+            "line separator": lambda root: self.add_file(root, "skills/knowledge-base/x.md", "a\u2028b\n"),
+            "name on two lines": lambda root: self.edit_skill(root, name="knowledge-base\n  more"),
+            "blank continuation": lambda root: self.edit_skill(root, extra=" \n"),
             "name mismatch": lambda root: self.edit_skill(root, name="knowledge-bases"),
             "quoted name": lambda root: self.edit_skill(root, name='"knowledge-base"'),
             "repeated name": lambda root: self.edit_skill(root, extra="name: knowledge-base\n"),
@@ -483,11 +524,22 @@ STATEMENTS = {
                    "case-sensitive", "`ls -l` of a file proves nothing"),
     "discovery order": ("Inside a store", "Registered stores", "A path the owner names", "overrides",
                         "`../name`", "absolute path", "the home directory", "`.git`", "not declared",
-                        "not available", "`kind`", "`schema`"),
+                        "not available", "`kind`", "`schema`", "wait for the owner to confirm",
+                        "any store, however it was found", "contains the home directory",
+                        "contains the project root", "itself a symlink"),
+    "file tools": ("one checked file at a time", "Grep or Glob"),
     "several stores": ("Never select by type alone", "never merge stores", "its store and domain"),
     "use a store": ("charter", "`[V]`", "`[A]`", "`[U]`", "saved source", "quarantine",
                     "outside the store", "entries and sources used"),
 }
+
+
+class FoldTests(unittest.TestCase):
+    def test_paths_that_differ_only_by_case_or_normalisation_are_duplicates(self):
+        self.assertEqual(duplicate_paths(["skills/a/SKILL.md", "skills/A/skill.md"]), ["skills/A/skill.md"])
+        self.assertEqual(duplicate_paths(["x/\u00e9.md", "x/e\u0301.md"]), ["x/e\u0301.md"])
+        self.assertEqual(duplicate_paths(["x/stra\u00dfe.md", "x/STRASSE.md"]), ["x/STRASSE.md"])
+        self.assertEqual(duplicate_paths(["skills/a/SKILL.md", "skills/b/SKILL.md"]), [])
 
 
 class SkillTests(unittest.TestCase):

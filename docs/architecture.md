@@ -25,7 +25,8 @@ Not built yet: upgrading a store. The roadmap orders the remaining work
   tools, and `kbfiles.py` holds the safe reads and atomic writes they and the converter share.
   `kit/files/docs/kb/` holds copies of the four specifications, guarded by a drift test.
 - `kit/files/template-module/` is the descriptor that lets `claude_project_template` register a store
-  and insert guidance into other projects.
+  and insert guidance into other projects. Its `harness/claude/` directory holds the one skill a project
+  can install from the store after the owner approves it.
 - `tests/` is a `unittest` suite that creates stores in scratch directories.
 - `docs/` holds this repository's own decisions, specifications, plans, and roadmaps. None of them is
   shipped to a store.
@@ -95,8 +96,9 @@ fails. `kb_status.py` and `check_kb.py` only read.
   `--use-global-git-identity`, and `--dry-run`; or `install.py --upgrade --dir <store>` with `--dry-run`.
   Exit status 0 success (including an upgrade that skipped edited files, which it lists), 1 refusal or
   error, 2 usage.
-- The `template-module/` descriptor: `module.json` and an `agents-guidance` fragment, in the format
-  the project template defines. It is the only coupling between the two repositories, and
+- The `template-module/` descriptor: `module.json`, an `agents-guidance` fragment and the consuming
+  `knowledge-base` skill under `harness/claude/`, in the format the project template defines
+  (`module_format` 3). It is the only coupling between the two repositories, and
   neither reads the other's code.
 - The registration line, which tells the owner how to register the store with the template, with a
   suggested `--name` when the directory name is not a valid template module name.
